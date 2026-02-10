@@ -117,14 +117,14 @@
 
     /* Winner announcement — terminal alert */
     #winner {
-      display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      display: none; position: fixed; bottom: 40px; right: 10px;
       background: var(--bg);
       color: var(--secondary);
       font-family: var(--font); font-size: 16px;
       padding: 0; border: 1px solid var(--secondary);
       border-radius: 0; text-align: left;
       text-shadow: 0 0 8px rgba(255, 176, 0, 0.6);
-      min-width: 320px; z-index: 60;
+      min-width: 280px; z-index: 60;
     }
     #winner-header {
       padding: 4px 8px;
@@ -501,7 +501,9 @@
 
     const loader = new FBXLoader();
     loader.load('bull-animations-v02/source/Bull.fbx', (fbx) => {
-      document.getElementById('loading').style.display = 'none';
+      const loadEl = document.getElementById('loading');
+      loadEl.textContent = '> LFG!!!!';
+      setTimeout(() => { loadEl.style.display = 'none'; }, 1000);
 
       // Log available animations
       console.log(`Animations found: ${fbx.animations.length}`);
@@ -712,7 +714,8 @@
 
     }, (progress) => {
       if (progress.total > 0) {
-        document.getElementById('loading').textContent = `> initializing_bull_run [${Math.round(progress.loaded/progress.total*100)}%]`;
+        const pct = Math.min(100, Math.round(progress.loaded / progress.total * 100));
+        document.getElementById('loading').textContent = `> initializing_bull_run [${pct}%]`;
       }
     }, (error) => {
       console.error('Error:', error);
