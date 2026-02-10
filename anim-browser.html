@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BULL ANIMATION BROWSER</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0a0a;
+      --primary: #33ff00;
+      --secondary: #ffb000;
+      --muted: #1f521f;
+      --error: #ff3333;
+      --font: 'JetBrains Mono', monospace;
+      --glow: 0 0 5px rgba(51, 255, 0, 0.5);
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: var(--bg); color: var(--primary);
+      font-family: var(--font); font-size: 12px;
+      display: flex; height: 100vh; overflow: hidden;
+    }
+
+    /* Sidebar — animation list */
+    #sidebar {
+      width: 300px; min-width: 300px;
+      border-right: 1px solid var(--muted);
+      display: flex; flex-direction: column;
+      background: rgba(10, 10, 10, 0.95);
+    }
+    #sidebar-header {
+      padding: 8px 10px;
+      background: var(--primary); color: var(--bg);
+      font-weight: 700; font-size: 10px; letter-spacing: 1px;
+    }
+    #search {
+      width: 100%; padding: 6px 10px;
+      background: var(--bg); color: var(--primary);
+      border: none; border-bottom: 1px solid var(--muted);
+      font-family: var(--font); font-size: 11px;
+      outline: none;
+    }
+    #search::placeholder { color: var(--muted); }
+    #anim-list {
+      flex: 1; overflow-y: auto; list-style: none;
+    }
+    #anim-list::-webkit-scrollbar { width: 6px; }
+    #anim-list::-webkit-scrollbar-track { background: var(--bg); }
+    #anim-list::-webkit-scrollbar-thumb { background: var(--muted); }
+    #anim-list li {
+      padding: 5px 10px; cursor: pointer;
+      border-bottom: 1px solid rgba(31, 82, 31, 0.2);
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    #anim-list li:hover { background: rgba(51, 255, 0, 0.08); }
+    #anim-list li.active {
+      background: rgba(51, 255, 0, 0.15);
+      color: var(--secondary);
+      text-shadow: var(--glow);
+    }
+    #anim-list .idx { color: var(--muted); width: 28px; flex-shrink: 0; }
+    #anim-list .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #anim-list .dur { color: var(--muted); font-size: 10px; flex-shrink: 0; margin-left: 6px; }
+
+    /* Viewport */
+    #viewport {
+      flex: 1; position: relative;
+    }
+    #viewport canvas { display: block; width: 100%; height: 100%; }
+
+    /* Info bar */
+    #info-bar {
+      position: absolute; bottom: 0; left: 0; width: 100%;
+      padding: 6px 12px;
+      background: rgba(10, 10, 10, 0.85);
+      border-top: 1px solid var(--muted);
+      font-size: 11px; color: var(--primary);
+      display: flex; justify-content: space-between;
+      text-shadow: var(--glow);
+    }
+    #info-bar .label { color: var(--muted); }
+    #info-bar .val { color: var(--secondary); }
+
+    /* Controls */
+    #controls {
+      position: absolute; top: 10px; left: 10px;
+      display: flex; gap: 6px;
+    }
+    #controls button {
+      background: var(--bg); color: var(--primary);
+      border: 1px solid var(--muted); font-family: var(--font);
+      font-size: 11px; padding: 4px 10px; cursor: pointer;
+    }
+    #controls button:hover { background: var(--primary); color: var(--bg); }
+    #controls button.active { background: var(--primary); color: var(--bg); }
+
+    /* Speed slider */
+    #speed-control {
+      position: absolute; top: 10px; right: 10px;
+      display: flex; align-items: center; gap: 6px;
+      font-size: 10px; color: var(--muted);
+    }
+    #speed-slider {
+      width: 80px; accent-color: var(--primary);
+    }
+
+    /* Loading */
+    #loading {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      color: var(--primary); font-size: 14px; text-shadow: var(--glow);
+    }
+    #loading::after { content: '_'; animation: blink 0.6s step-end infinite; }
+    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+  </style>
+</head>
+<body>
+  <div id="sidebar">
+    <div id="sidebar-header">+-- ANIMATIONS --+</div>
+    <input id="search" type="text" placeholder="> filter animations...">
+    <ul id="anim-list"></ul>
+  </div>
+  <div id="viewport">
+    <div id="loading">> loading_bull</div>
+    <div id="controls">
+      <button id="btn-play" class="active">[ PLAY ]</button>
+      <button id="btn-pause">[ PAUSE ]</button>
+      <button id="btn-loop" class="active">[ LOOP ]</button>
+      <button id="btn-wire">[ WIRE ]</button>
+    </div>
+    <div id="speed-control">
+      <span>SPEED:</span>
+      <input id="speed-slider" type="range" min="0.1" max="3" step="0.1" value="1">
+      <span id="speed-val" class="val">1.0x</span>
+    </div>
+    <div id="info-bar">
+      <span><span class="label">CLIP:</span> <span id="info-clip">--</span></span>
+      <span><span class="label">DUR:</span> <span id="info-dur" class="val">--</span></span>
+      <span><span class="label">TRACKS:</span> <span id="info-tracks" class="val">--</span></span>
+      <span><span class="label">TIME:</span> <span id="info-time" class="val">0.00s</span></span>
+    </div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+
+    // ======== SCENE ========
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1a1a1a);
+
+    const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+    camera.position.set(5, 3, 5);
+
+    const viewportEl = document.getElementById('viewport');
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
+    viewportEl.insertBefore(renderer.domElement, viewportEl.firstChild);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.target.set(0, 1, 0);
+
+    // ======== LIGHTING ========
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    const key = new THREE.DirectionalLight(0xffffff, 1.2);
+    key.position.set(5, 8, 5);
+    scene.add(key);
+    const fill = new THREE.DirectionalLight(0x8899bb, 0.4);
+    fill.position.set(-3, 4, -3);
+    scene.add(fill);
+    const rim = new THREE.DirectionalLight(0xffeedd, 0.3);
+    rim.position.set(0, 2, -5);
+    scene.add(rim);
+
+    // Ground grid
+    const grid = new THREE.GridHelper(20, 20, 0x1f521f, 0x111111);
+    grid.material.transparent = true;
+    grid.material.opacity = 0.5;
+    scene.add(grid);
+
+    // ======== LOAD TEXTURES ========
+    const texLoader = new THREE.TextureLoader();
+    const basePath = 'bull-animations-v02/textures/';
+    const albedoTex = texLoader.load(basePath + 'Bull_Albedo3.png');
+    const normalTex = texLoader.load(basePath + 'Bull_Normal.png');
+    const aoTex = texLoader.load(basePath + 'Bull_AO.png');
+    const roughnessTex = texLoader.load(basePath + 'Bull_Roughness.png');
+    [albedoTex, normalTex, aoTex, roughnessTex].forEach(t => {
+      t.colorSpace = THREE.SRGBColorSpace;
+      t.flipY = false;
+    });
+    // Normal map should be linear
+    normalTex.colorSpace = THREE.LinearSRGBColorSpace;
+    aoTex.colorSpace = THREE.LinearSRGBColorSpace;
+    roughnessTex.colorSpace = THREE.LinearSRGBColorSpace;
+
+    const bullMaterial = new THREE.MeshStandardMaterial({
+      map: albedoTex,
+      normalMap: normalTex,
+      aoMap: aoTex,
+      roughnessMap: roughnessTex,
+      roughness: 1.0,
+      metalness: 0.0,
+    });
+
+    const wireMaterial = new THREE.MeshBasicMaterial({
+      color: 0x33ff00, wireframe: true, transparent: true, opacity: 0.85,
+    });
+
+    // ======== STATE ========
+    let mixer = null;
+    let currentAction = null;
+    let clips = [];
+    let bullModel = null;
+    let isWireframe = false;
+    let isLooping = true;
+    let isPaused = false;
+    const clock = new THREE.Clock();
+
+    // ======== LOAD FBX ========
+    const loader = new FBXLoader();
+    loader.load('bull-animations-v02/source/Bull.fbx', (fbx) => {
+      document.getElementById('loading').style.display = 'none';
+
+      // Scale to fit
+      const box = new THREE.Box3().setFromObject(fbx);
+      const size = box.getSize(new THREE.Vector3());
+      const scale = 3.0 / size.y;
+      fbx.scale.setScalar(scale);
+
+      // Center on ground
+      fbx.updateMatrixWorld(true);
+      const box2 = new THREE.Box3().setFromObject(fbx);
+      const center = box2.getCenter(new THREE.Vector3());
+      fbx.position.y -= box2.min.y;
+      fbx.position.x -= center.x;
+      fbx.position.z -= center.z;
+
+      // Apply textured material
+      fbx.traverse(child => {
+        if (child.isMesh) {
+          child.material = bullMaterial;
+        }
+      });
+
+      scene.add(fbx);
+      bullModel = fbx;
+
+      // Setup mixer
+      mixer = new THREE.AnimationMixer(fbx);
+      clips = fbx.animations;
+
+      // Sort clips by name
+      clips.sort((a, b) => a.name.localeCompare(b.name));
+
+      // Populate sidebar
+      buildAnimList(clips);
+
+      // Play first clip
+      if (clips.length > 0) {
+        playClip(0);
+      }
+
+      // Focus camera
+      controls.target.set(0, box2.getSize(new THREE.Vector3()).y * scale / 2, 0);
+      camera.position.set(4, 2.5, 4);
+
+    }, (progress) => {
+      if (progress.total > 0) {
+        document.getElementById('loading').textContent =
+          `> loading_bull [${Math.round(progress.loaded / progress.total * 100)}%]`;
+      }
+    }, (error) => {
+      document.getElementById('loading').textContent = `> ERROR: ${error.message}_`;
+    });
+
+    // ======== ANIMATION LIST UI ========
+    function buildAnimList(clipList) {
+      const ul = document.getElementById('anim-list');
+      ul.innerHTML = '';
+      clipList.forEach((clip, i) => {
+        const li = document.createElement('li');
+        li.dataset.index = i;
+        // Strip common prefix "Arm_Bull|"
+        const shortName = clip.name.replace('Arm_Bull|', '');
+        li.innerHTML = `<span class="idx">${String(i).padStart(2, '0')}</span><span class="name" title="${clip.name}">${shortName}</span><span class="dur">${clip.duration.toFixed(2)}s</span>`;
+        li.addEventListener('click', () => playClip(i));
+        ul.appendChild(li);
+      });
+    }
+
+    function playClip(index) {
+      if (!mixer || index >= clips.length) return;
+
+      const clip = clips[index];
+
+      // Update active state in list
+      document.querySelectorAll('#anim-list li').forEach((li, i) => {
+        li.classList.toggle('active', i === index);
+        if (i === index) li.scrollIntoView({ block: 'nearest' });
+      });
+
+      // Stop current, play new
+      if (currentAction) {
+        currentAction.fadeOut(0.2);
+      }
+
+      const action = mixer.clipAction(clip);
+      action.reset();
+      action.setLoop(isLooping ? THREE.LoopRepeat : THREE.LoopOnce);
+      action.clampWhenFinished = !isLooping;
+      action.fadeIn(0.2);
+      action.play();
+      action.timeScale = parseFloat(document.getElementById('speed-slider').value);
+
+      if (isPaused) {
+        mixer.timeScale = 0;
+      } else {
+        mixer.timeScale = 1;
+      }
+
+      currentAction = action;
+
+      // Update info bar
+      document.getElementById('info-clip').textContent = clip.name.replace('Arm_Bull|', '');
+      document.getElementById('info-dur').textContent = clip.duration.toFixed(2) + 's';
+      document.getElementById('info-tracks').textContent = clip.tracks.length;
+    }
+
+    // ======== FILTER ========
+    document.getElementById('search').addEventListener('input', (e) => {
+      const q = e.target.value.toLowerCase();
+      document.querySelectorAll('#anim-list li').forEach(li => {
+        const name = li.querySelector('.name').textContent.toLowerCase();
+        li.style.display = name.includes(q) ? '' : 'none';
+      });
+    });
+
+    // ======== CONTROLS ========
+    document.getElementById('btn-play').addEventListener('click', () => {
+      isPaused = false;
+      mixer.timeScale = 1;
+      document.getElementById('btn-play').classList.add('active');
+      document.getElementById('btn-pause').classList.remove('active');
+    });
+
+    document.getElementById('btn-pause').addEventListener('click', () => {
+      isPaused = true;
+      mixer.timeScale = 0;
+      document.getElementById('btn-pause').classList.add('active');
+      document.getElementById('btn-play').classList.remove('active');
+    });
+
+    document.getElementById('btn-loop').addEventListener('click', function() {
+      isLooping = !isLooping;
+      this.classList.toggle('active', isLooping);
+      if (currentAction) {
+        currentAction.setLoop(isLooping ? THREE.LoopRepeat : THREE.LoopOnce);
+        currentAction.clampWhenFinished = !isLooping;
+      }
+    });
+
+    document.getElementById('btn-wire').addEventListener('click', function() {
+      isWireframe = !isWireframe;
+      this.classList.toggle('active', isWireframe);
+      if (bullModel) {
+        bullModel.traverse(child => {
+          if (child.isMesh) {
+            child.material = isWireframe ? wireMaterial : bullMaterial;
+          }
+        });
+      }
+    });
+
+    document.getElementById('speed-slider').addEventListener('input', function() {
+      const val = parseFloat(this.value);
+      document.getElementById('speed-val').textContent = val.toFixed(1) + 'x';
+      if (currentAction) {
+        currentAction.timeScale = val;
+      }
+    });
+
+    // Keyboard navigation
+    window.addEventListener('keydown', (e) => {
+      if (e.target === document.getElementById('search')) return;
+      const activeEl = document.querySelector('#anim-list li.active');
+      if (!activeEl) return;
+      const idx = parseInt(activeEl.dataset.index);
+      if (e.key === 'ArrowDown' && idx < clips.length - 1) {
+        e.preventDefault();
+        playClip(idx + 1);
+      } else if (e.key === 'ArrowUp' && idx > 0) {
+        e.preventDefault();
+        playClip(idx - 1);
+      } else if (e.key === ' ') {
+        e.preventDefault();
+        if (isPaused) document.getElementById('btn-play').click();
+        else document.getElementById('btn-pause').click();
+      }
+    });
+
+    // ======== RENDER ========
+    function animate() {
+      requestAnimationFrame(animate);
+      const dt = clock.getDelta();
+      if (mixer) {
+        mixer.update(dt);
+        // Update time display
+        if (currentAction) {
+          document.getElementById('info-time').textContent =
+            currentAction.time.toFixed(2) + 's';
+        }
+      }
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    function onResize() {
+      const w = viewportEl.clientWidth;
+      const h = viewportEl.clientHeight;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    }
+    window.addEventListener('resize', onResize);
+    // Initial size
+    requestAnimationFrame(() => { onResize(); animate(); });
+  </script>
+</body>
+</html>

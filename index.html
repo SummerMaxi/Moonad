@@ -130,7 +130,15 @@
       padding: 4px 8px;
       background: var(--secondary); color: var(--bg);
       font-weight: 700; font-size: 10px; letter-spacing: 1px;
+      display: flex; justify-content: space-between; align-items: center;
     }
+    #winner-close {
+      cursor: pointer; pointer-events: auto;
+      background: none; border: 1px solid var(--bg); color: var(--bg);
+      font-family: var(--font); font-size: 12px; font-weight: 700;
+      padding: 0 4px; line-height: 1.4;
+    }
+    #winner-close:hover { background: var(--bg); color: var(--secondary); }
     #winner-body {
       padding: 16px;
     }
@@ -170,7 +178,7 @@
   </div>
   <div id="loading">&gt; loading_assets</div>
   <div id="winner">
-    <div id="winner-header">+-- RACE COMPLETE --+</div>
+    <div id="winner-header"><span>+-- RACE COMPLETE --+</span><button id="winner-close" onclick="document.getElementById('winner').style.display='none'">[X]</button></div>
     <div id="winner-body"></div>
   </div>
   <div id="countdown"></div>
@@ -186,6 +194,7 @@
     import * as THREE from 'three';
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
     import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+    import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 
     const NUM_BULLS = 8;
     const LANE_WIDTH = 2.4;
@@ -475,369 +484,231 @@
     );
     scene.add(speedLines);
 
-    // ======== LOAD FBX & SETUP BULLS ========
+    // ======== LOAD FBX & SETUP BULLS (Skeletal Animation) ========
     const clock = new THREE.Clock();
     const bulls = [];
-    let bodyAxisGlobal = 'x';
     let raceStarted = false;
     let raceStartTime = 0;
+    let countdownStarted = false;
 
-    function setupVertexAnimation(mesh, root) {
-      const geo = mesh.geometry;
-      const pos = geo.attributes.position;
-      const count = pos.count;
-      mesh.updateMatrixWorld(true);
-      const box = new THREE.Box3().setFromObject(root);
-      const min = box.min, max = box.max;
-      const size = box.getSize(new THREE.Vector3());
-      const center = box.getCenter(new THREE.Vector3());
-      const bodyAxis = size.x > size.z ? 'x' : 'z';
-      const sideAxis = bodyAxis === 'x' ? 'z' : 'x';
-      bodyAxisGlobal = bodyAxis;
-
-      // Key thresholds for separating legs from belly/body
-      const bodyBottomY = min.y + size.y * 0.40;       // below 40% height = potential leg
-      const bodyMidX = center[bodyAxis];
-      const bodySideCenter = center[sideAxis];
-      const sideHalfWidth = size[sideAxis] / 2;
-      const bellyThreshold = sideHalfWidth * 0.50;     // must be >50% from center to be a leg (was 0.2)
-
-      const vertexRegions = new Int8Array(count);
-      const legWeights = new Float32Array(count);       // per-vertex animation weight (0=no anim, 1=full)
-      const worldPositions = new Float32Array(count * 3);
-
-      for (let i = 0; i < count; i++) {
-        const wp = new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i));
-        mesh.localToWorld(wp);
-        worldPositions[i * 3] = wp.x; worldPositions[i * 3 + 1] = wp.y; worldPositions[i * 3 + 2] = wp.z;
-        const bodyPos = wp[bodyAxis], sidePos = wp[sideAxis], height = wp.y;
-        const sideOffset = Math.abs(sidePos - bodySideCenter);
-
-        if (height < bodyBottomY && sideOffset > bellyThreshold) {
-          const isFront = bodyPos > bodyMidX, isLeft = sidePos > bodySideCenter;
-          if (isFront && isLeft) vertexRegions[i] = 1;
-          else if (isFront && !isLeft) vertexRegions[i] = 2;
-          else if (!isFront && isLeft) vertexRegions[i] = 3;
-          else vertexRegions[i] = 4;
-
-          // Smooth weight: vertices deep in the leg get full weight,
-          // vertices near body boundary get reduced weight (smooth blend)
-          const heightFactor = 1.0 - Math.max(0, Math.min(1, (height - min.y) / (bodyBottomY - min.y)));
-          // heightFactor: 0 at bodyBottomY (hip), 1 at ground
-          const sideFactor = Math.max(0, Math.min(1, (sideOffset - bellyThreshold) / (sideHalfWidth - bellyThreshold)));
-          legWeights[i] = Math.min(1, heightFactor * 0.7 + 0.3) * Math.min(1, sideFactor * 0.5 + 0.5);
-        } else {
-          const n = (bodyPos - min[bodyAxis]) / size[bodyAxis];
-          if (n > 0.82) vertexRegions[i] = 5;       // head
-          else if (n < 0.15) vertexRegions[i] = 6;   // tail
-          else vertexRegions[i] = 0;                  // body
-          legWeights[i] = 0;
-        }
-      }
-
-      // Compute leg pivots (hip/shoulder joints) — use the TOP of each leg group, not the average
-      const pivots = {};
-      const pivotGroups = { 1: [], 2: [], 3: [], 4: [] };
-      for (let i = 0; i < count; i++) {
-        const r = vertexRegions[i];
-        if (r >= 1 && r <= 4) {
-          pivotGroups[r].push(i);
-        }
-      }
-      for (let r = 1; r <= 4; r++) {
-        if (pivotGroups[r].length === 0) { pivots[r] = null; continue; }
-        // Pivot = highest point of the leg group (where it meets the body)
-        let maxY = -Infinity;
-        let sumA = 0, sumS = 0, cnt = 0;
-        for (const idx of pivotGroups[r]) {
-          const wy = worldPositions[idx * 3 + 1];
-          const wa = bodyAxis === 'x' ? worldPositions[idx * 3] : worldPositions[idx * 3 + 2];
-          const ws = sideAxis === 'x' ? worldPositions[idx * 3] : worldPositions[idx * 3 + 2];
-          if (wy > maxY) maxY = wy;
-          sumA += wa; sumS += ws; cnt++;
-        }
-        const pivot = new THREE.Vector3();
-        pivot.y = maxY;  // top of leg = joint
-        pivot[bodyAxis] = sumA / cnt;
-        pivot[sideAxis] = sumS / cnt;
-        pivots[r] = pivot;
-      }
-
-      return { mesh, vertexRegions, legWeights, worldPositions, pivots, bodyBottomY, bodyAxis, sideAxis, box: { min, max, size, center: center.clone() } };
+    // Strip root_bone position tracks from a clip (we control movement ourselves)
+    function stripRootMotion(clip) {
+      clip.tracks = clip.tracks.filter(track => {
+        return !(track.name.includes('root_bone') && track.name.endsWith('.position'));
+      });
+      return clip;
     }
 
-    // Gallop curve: asymmetric — quick forward snap, slower pull-back
-    function gallopCurve(phase) {
-      const p = ((phase % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
-      if (p < Math.PI) {
-        return Math.sin(p);         // forward swing
-      } else {
-        return Math.sin(p) * 0.85;  // slightly slower return
-      }
-    }
-
-    // Knee bend curve: knee flexes (bends forward for front, back for rear) during swing phase
-    function kneeBendCurve(phase) {
-      const p = ((phase % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
-      // Knee bends during forward swing (0 to PI), straightens during ground contact
-      if (p < Math.PI) {
-        return Math.sin(p * 2) * Math.max(0, Math.sin(p));  // bend during lift
-      }
-      return 0;  // straight during push-off / ground contact
-    }
-
-    function animateBull(bull, elapsed) {
-      const ad = bull.animData;
-      if (!ad) return;
-      const { mesh, vertexRegions, legWeights, worldPositions, pivots, bodyAxis, sideAxis, box } = ad;
-      const pos = mesh.geometry.attributes.position;
-      const count = pos.count;
-
-      const animSpeed = 12.0;
-      const t = elapsed * animSpeed + bull.phase;
-
-      // Transverse gallop pattern (typical of cattle)
-      const legPhases = {
-        1: t,                       // Front-left leads
-        2: t + Math.PI * 0.15,     // Front-right follows closely
-        3: t + Math.PI * 0.85,     // Rear-left
-        4: t + Math.PI * 1.0,      // Rear-right follows
-      };
-
-      // Subtle body bob
-      const bodyBobY = Math.sin(t * 2) * 0.02;
-
-      mesh.updateMatrixWorld(true);
-      const invMatrix = mesh.matrixWorld.clone().invert();
-      const groupDX = bull.group.position.x - (bull.setupGroupX || 0);
-
-      for (let i = 0; i < count; i++) {
-        const region = vertexRegions[i];
-        const wx = worldPositions[i*3], wy = worldPositions[i*3+1], wz = worldPositions[i*3+2];
-        let newX = wx, newY = wy, newZ = wz;
-
-        if (region >= 1 && region <= 4 && pivots[region]) {
-          const pivot = pivots[region];
-          const weight = legWeights[i];
-          const phase = legPhases[region];
-
-          // ---- SEGMENT 1: HIP/SHOULDER SWING ----
-          // The ENTIRE leg swings from the hip. Upper leg drives the motion.
-          const hipSwing = gallopCurve(phase) * 0.30;   // ~17° max
-
-          // How far down the leg (0 = hip, 1 = hoof)
-          const legLength = pivot.y - ad.box.min.y;
-          const distFromPivot = Math.max(0, pivot.y - wy);
-          const nDist = Math.min(1, distFromPivot / Math.max(0.01, legLength));
-
-          // Upper leg factor: ramps up quickly from hip.
-          // Even vertices at 10% down the leg get decent swing.
-          const upperFactor = Math.min(1, nDist * 2.5);  // reaches full at 40% down
-
-          // Rotate entire leg from hip pivot
-          let relY = wy - pivot.y;
-          let relA = (bodyAxis === 'x') ? (wx - pivot.x) : (wz - pivot.z);
-          const hipAngle = hipSwing * upperFactor * weight;
-          let c = Math.cos(hipAngle), s = Math.sin(hipAngle);
-          newY = pivot.y + relY * c - relA * s;
-          if (bodyAxis === 'x') newX = pivot.x + relY * s + relA * c;
-          else newZ = pivot.z + relY * s + relA * c;
-
-          // ---- SEGMENT 2: KNEE BEND ----
-          // Below the knee (~45% down), add extra bend on top of hip rotation.
-          // Knee bends during forward swing, straight during ground contact.
-          const kneeLine = 0.45;
-          if (nDist > kneeLine) {
-            const kneeBend = kneeBendCurve(phase) * 0.30;
-            const belowKnee = (nDist - kneeLine) / (1.0 - kneeLine);
-
-            // Knee pivot Y = hip minus 45% of leg length (already hip-rotated)
-            // We compute where the knee point ended up after hip rotation
-            const kneeOrigRelY = -legLength * kneeLine;  // relative to hip
-            const kneeOrigRelA = 0;
-            const kneePivY = pivot.y + kneeOrigRelY * c - kneeOrigRelA * s;
-            const kneePivA = (bodyAxis === 'x') ? pivot.x : pivot.z;
-
-            // Front legs: knee bends backward (-), rear legs: forward (+)
-            const kneeDir = (region <= 2) ? -1 : 1;
-            const kneeAngle = kneeBend * belowKnee * kneeDir * weight;
-            const kc = Math.cos(kneeAngle), ks = Math.sin(kneeAngle);
-
-            const rY = newY - kneePivY;
-            const rA = (bodyAxis === 'x') ? (newX - kneePivA) : (newZ - kneePivA);
-            newY = kneePivY + rY * kc - rA * ks;
-            if (bodyAxis === 'x') newX = kneePivA + rY * ks + rA * kc;
-            else newZ = kneePivA + rY * ks + rA * kc;
-          }
-
-          // ---- HOOF LIFT ----
-          // Hooves lift off the ground during forward swing
-          if (nDist > 0.75) {
-            const lift = gallopCurve(phase);
-            if (lift > 0) {
-              newY += lift * 0.08 * (nDist - 0.75) / 0.25 * weight;
-            }
-          }
-        } else if (region === 0) {
-          // Body: subtle bob
-          newY += bodyBobY;
-        } else if (region === 5) {
-          // Head: gentle nod synced with gallop
-          const headNod = Math.sin(t * 2 + 0.5) * 0.04;
-          const headDist = (bodyAxis === 'x')
-            ? Math.max(0, (wx - box.center.x) / (box.size.x * 0.5))
-            : Math.max(0, (wz - box.center[bodyAxis]) / (box.size[bodyAxis] * 0.5));
-          newY += headNod * Math.min(1, headDist);
-        } else if (region === 6) {
-          // Tail: gentle swish
-          const sw = Math.sin(t * 1.8) * 0.08;
-          const tailDist = (bodyAxis === 'x')
-            ? Math.max(0, (box.center.x - wx) / (box.size.x * 0.5))
-            : Math.max(0, (box.center[bodyAxis] - wz) / (box.size[bodyAxis] * 0.5));
-          const f = Math.min(1, tailDist);
-          if (ad.sideAxis === 'z') newZ += sw * f; else newX += sw * f;
-        }
-
-        const local = new THREE.Vector3(newX + groupDX, newY, newZ).applyMatrix4(invMatrix);
-        pos.setXYZ(i, local.x, local.y, local.z);
-      }
-      pos.needsUpdate = true;
-
-      // Emit dust from rear legs
-      const bullWorldX = bull.group.position.x;
-      const bullWorldZ = bull.laneZ;
-      if (pivots[3] && gallopCurve(legPhases[3]) > 0.5) {
-        emitDust(bullWorldX - 0.5, 0, bullWorldZ + 0.3, bull.speed);
-      }
-      if (pivots[4] && gallopCurve(legPhases[4]) > 0.5) {
-        emitDust(bullWorldX - 0.5, 0, bullWorldZ - 0.3, bull.speed);
-      }
-    }
-
-    // Load FBX and create 8 clones
     const loader = new FBXLoader();
-    loader.load('FB.fbx', (fbx) => {
+    loader.load('bull-animations-v02/source/Bull.fbx', (fbx) => {
       document.getElementById('loading').style.display = 'none';
 
+      // Log available animations
+      console.log(`Animations found: ${fbx.animations.length}`);
+      fbx.animations.forEach((c, i) => console.log(`  [${i}] ${c.name} (${c.duration.toFixed(2)}s)`));
+
+      // Find key animation clips
+      const runClip = stripRootMotion(
+        fbx.animations.find(c => c.name.includes('Run_F_RM')) || fbx.animations[0]
+      );
+      const idleClip = stripRootMotion(
+        fbx.animations.find(c => c.name.includes('Idle_1')) || fbx.animations[0]
+      );
+      const trotClip = stripRootMotion(
+        fbx.animations.find(c => c.name.includes('Trot_F_RM')) || runClip
+      );
+      const walkClip = stripRootMotion(
+        fbx.animations.find(c => c.name.includes('Walk_F_RM')) ||
+        fbx.animations.find(c => c.name.includes('Walk')) || trotClip
+      );
+      const lieStartClip = stripRootMotion(
+        fbx.animations.find(c => c.name.includes('Lie_start')) || idleClip
+      );
+      const lieLoopClip = stripRootMotion(
+        fbx.animations.find(c => c.name.includes('Lie_loop1')) ||
+        fbx.animations.find(c => c.name.includes('Lie_loop')) || idleClip
+      );
+      const attackRunClip = stripRootMotion(
+        fbx.animations.find(c => c.name.includes('Attack_Run_RM')) || runClip
+      );
+      // Collect all idle variants for random assignment
+      const idleClips = fbx.animations
+        .filter(c => /Idle_\d/.test(c.name))
+        .map(c => stripRootMotion(c));
+      if (idleClips.length === 0) idleClips.push(idleClip);
+      console.log(`Using run: "${runClip.name}", walk: "${walkClip.name}", attack: "${attackRunClip.name}", idles: ${idleClips.length}, lie: "${lieStartClip.name}"`);
+
+      // Scale model: body is along Z (size z=3.42), height y=1.56
       const box0 = new THREE.Box3().setFromObject(fbx);
       const size0 = box0.getSize(new THREE.Vector3());
-      const scale = 3.0 / size0.y;
-      fbx.scale.setScalar(scale);
-      box0.setFromObject(fbx);
+      const targetHeight = 2.5;  // desired bull height in world units
+      const scale = targetHeight / size0.y;
 
-      let sourceMesh = null;
-      fbx.traverse(c => { if (c.isMesh && !sourceMesh) sourceMesh = c; });
-      if (!sourceMesh) { console.error('No mesh found'); return; }
+      // Apply wireframe material to source mesh
+      fbx.traverse(child => {
+        if (child.isMesh) {
+          child.material = new THREE.MeshBasicMaterial({
+            color: 0x33ff00,
+            wireframe: true,
+            transparent: true,
+            opacity: 0.85,
+          });
+        }
+      });
 
-      const needsRotation = size0.z > size0.x;
-      console.log(`Model: x=${size0.x.toFixed(2)} y=${size0.y.toFixed(2)} z=${size0.z.toFixed(2)}, needsRotation=${needsRotation}`);
-
-      // --- Auto-detect which rotation makes head face +X ---
-      // Build a test bull once to figure out the correct Y rotation
-      let bestRotY = 0;
+      // Auto-detect rotation: model body is along Z (z=3.42 > x=0.79)
+      // We need body along +X for our track. The head should face +X.
+      // Test rotations to find correct one
+      let bestRotY = -Math.PI / 2;  // default: rotate -90° to go from Z to X
       {
-        const testGroup = new THREE.Group();
-        const testBull = new THREE.Group();
-        const testMesh = new THREE.Mesh(sourceMesh.geometry, sourceMesh.material);
-        testMesh.position.copy(sourceMesh.position);
-        testMesh.rotation.copy(sourceMesh.rotation);
-        testMesh.scale.copy(sourceMesh.scale);
-        testBull.add(testMesh);
-        testBull.scale.copy(fbx.scale);
-        testGroup.add(testBull);
-
-        // Try all 4 cardinal rotations, pick the one where highest-Y vertices are at +X end
+        const testClone = SkeletonUtils.clone(fbx);
+        testClone.scale.setScalar(scale);
         let bestScore = -Infinity;
         for (const tryRot of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
-          testBull.rotation.y = tryRot;
-          testGroup.updateMatrixWorld(true);
-          const tb = new THREE.Box3().setFromObject(testGroup);
+          testClone.rotation.y = tryRot;
+          testClone.updateMatrixWorld(true);
+          const tb = new THREE.Box3().setFromObject(testClone);
           const tc = tb.getCenter(new THREE.Vector3());
           const ts = tb.getSize(new THREE.Vector3());
-
-          // Body should be longer along X than Z after correct rotation
-          if (ts.x < ts.z * 0.8) continue; // skip if body isn't along X
-
-          // Check: the +X end should have the head (highest Y vertices = horns)
+          if (ts.x < ts.z * 0.8) continue;
+          // Find where the head (highest Y) is — should be at +X
           let plusXMaxY = -Infinity, minusXMaxY = -Infinity;
-          const wp = new THREE.Vector3();
-          const pos = testMesh.geometry.attributes.position;
-          testMesh.updateMatrixWorld(true);
-          for (let vi = 0; vi < pos.count; vi += 5) {
-            wp.set(pos.getX(vi), pos.getY(vi), pos.getZ(vi));
-            testMesh.localToWorld(wp);
-            if (wp.x > tc.x) plusXMaxY = Math.max(plusXMaxY, wp.y);
-            else minusXMaxY = Math.max(minusXMaxY, wp.y);
-          }
-          // Score: head (horns) at +X end means plusXMaxY > minusXMaxY
-          // Also prefer body along X (wider X = better)
+          testClone.traverse(child => {
+            if (child.isMesh) {
+              const pos = child.geometry.attributes.position;
+              const wp = new THREE.Vector3();
+              child.updateMatrixWorld(true);
+              for (let vi = 0; vi < pos.count; vi += 10) {
+                wp.set(pos.getX(vi), pos.getY(vi), pos.getZ(vi));
+                child.localToWorld(wp);
+                if (wp.x > tc.x) plusXMaxY = Math.max(plusXMaxY, wp.y);
+                else minusXMaxY = Math.max(minusXMaxY, wp.y);
+              }
+            }
+          });
           const score = (plusXMaxY - minusXMaxY) + (ts.x - ts.z) * 0.1;
-          if (score > bestScore) {
-            bestScore = score;
-            bestRotY = tryRot;
-          }
+          if (score > bestScore) { bestScore = score; bestRotY = tryRot; }
         }
-        testGroup.remove(testBull);
         console.log(`Auto-detected rotation: ${(bestRotY * 180 / Math.PI).toFixed(0)}°`);
       }
 
+      // Create 8 bulls using SkeletonUtils.clone
       for (let i = 0; i < NUM_BULLS; i++) {
         const laneZ = (i - NUM_BULLS / 2 + 0.5) * LANE_WIDTH;
         const laneGroup = new THREE.Group();
         laneGroup.position.z = laneZ;
 
-        const bullGroup = new THREE.Group();
-        const clonedGeo = sourceMesh.geometry.clone();
-        const mesh = new THREE.Mesh(clonedGeo, new THREE.MeshBasicMaterial({
-          color: bullColors[i].wire,
-          wireframe: true,
-          transparent: true,
-          opacity: 0.85,
-        }));
-        mesh.position.copy(sourceMesh.position);
-        mesh.rotation.copy(sourceMesh.rotation);
-        mesh.scale.copy(sourceMesh.scale);
+        // Clone the entire FBX (preserves skeleton + skinning)
+        const bullClone = SkeletonUtils.clone(fbx);
+        bullClone.scale.setScalar(scale);
+        bullClone.rotation.y = bestRotY;
 
-        bullGroup.add(mesh);
-        bullGroup.scale.copy(fbx.scale);
+        // Apply unique wireframe color
+        bullClone.traverse(child => {
+          if (child.isMesh) {
+            child.material = new THREE.MeshBasicMaterial({
+              color: bullColors[i].wire,
+              wireframe: true,
+              transparent: true,
+              opacity: 0.85,
+            });
+          }
+        });
 
-        // Apply auto-detected rotation so head faces +X (running direction)
-        bullGroup.rotation.y = bestRotY;
-
-        laneGroup.add(bullGroup);
+        laneGroup.add(bullClone);
         laneGroup.updateMatrixWorld(true);
+
+        // Center on ground
         const bullBox = new THREE.Box3().setFromObject(laneGroup);
         const bullCenter = bullBox.getCenter(new THREE.Vector3());
-
-        bullGroup.position.y -= bullBox.min.y;
-        bullGroup.position.x -= bullCenter.x;
-        bullGroup.position.z -= (bullCenter.z - laneZ);
+        bullClone.position.y -= bullBox.min.y;
+        bullClone.position.x -= bullCenter.x;
+        bullClone.position.z -= (bullCenter.z - laneZ);
 
         scene.add(laneGroup);
-        laneGroup.updateMatrixWorld(true);
 
-        const animData = setupVertexAnimation(mesh, laneGroup);
+        // Setup AnimationMixer
+        const mixer = new THREE.AnimationMixer(bullClone);
+        const idleAction = mixer.clipAction(idleClip);
+        const runAction = mixer.clipAction(runClip);
+        const walkAction = mixer.clipAction(walkClip);
+        const lieStartAction = mixer.clipAction(lieStartClip);
+        const lieLoopAction = mixer.clipAction(lieLoopClip);
+        const attackRunAction = mixer.clipAction(attackRunClip);
+        attackRunAction.setLoop(THREE.LoopOnce);
+        attackRunAction.clampWhenFinished = true;
+
+        // Pick a random idle variant for this bull's post-finish rest
+        const restIdleClip = idleClips[Math.floor(Math.random() * idleClips.length)];
+        const restIdleAction = mixer.clipAction(restIdleClip);
+
+        // Lie-down plays once then holds final pose
+        lieStartAction.setLoop(THREE.LoopOnce);
+        lieStartAction.clampWhenFinished = true;
+
+        // Start with walk toward the start line
+        walkAction.play();
+
+        // Offset animation time so bulls aren't all in sync
+        const timeOffset = Math.random() * walkClip.duration;
+        mixer.setTime(timeOffset);
+
+        // Auto-transition on animation finish events
+        mixer.addEventListener('finished', (e) => {
+          if (e.action === lieStartAction) {
+            lieStartAction.fadeOut(0.5);
+            lieLoopAction.reset().fadeIn(0.5).play();
+          }
+          // Winner: attack ends → walk
+          if (e.action === attackRunAction) {
+            attackRunAction.fadeOut(0.5);
+            walkAction.reset().fadeIn(0.5).play();
+            // Mark as walking so the winner block stops matching
+            const b = bulls.find(b => b.mixer === mixer);
+            if (b) b.isWalking = true;
+          }
+        });
+
+        // Per-bull random post-finish timing
+        const walkDuration = 3 + Math.random() * 4;     // 3-7s of walking
+        const idleDuration = 3 + Math.random() * 3;     // 3-6s of idle before lying
 
         bulls.push({
           group: laneGroup,
-          mesh,
-          animData,
-          speed: 10 + Math.random() * 5,          // 10-15 m/s (realistic bull gallop)
+          clone: bullClone,
+          mixer,
+          idleAction,
+          runAction,
+          walkAction,
+          lieStartAction,
+          lieLoopAction,
+          attackRunAction,
+          restIdleAction,
+          speed: 10 + Math.random() * 5,
           phase: Math.random() * Math.PI * 2,
           laneZ,
-          racePos: -3 - Math.random() * 2,        // staggered start positions
-          setupGroupX: laneGroup.position.x,       // world X when vertex anim was set up (0)
+          racePos: -20 - Math.random() * 10,
+          startTarget: -3,
+          walkSpeed: 2.0 + Math.random() * 0.8,
+          arrived: false,
           name: bullColors[i].name,
           color: bullColors[i].dot,
           finished: false,
           finishRank: 0,
+          finishTime: 0,
+          isRunning: false,
+          isWalking: false,
+          isIdling: false,
+          isLying: false,
+          // Per-bull post-finish phase durations
+          postDecel: 2,
+          postWalkEnd: 2 + walkDuration,
+          postIdleEnd: 2 + walkDuration + idleDuration,
         });
       }
 
       console.log(`${NUM_BULLS} bulls loaded — speeds: ${bulls.map(b => b.speed.toFixed(1)).join(', ')}`);
-
-      // Start countdown
-      startCountdown();
+      // Countdown starts when all bulls walk to the start line
 
     }, (progress) => {
       if (progress.total > 0) {
@@ -845,8 +716,73 @@
       }
     }, (error) => {
       console.error('Error:', error);
-      document.getElementById('loading').textContent = 'Error loading model.';
+      document.getElementById('loading').textContent = `> ERROR: ${error.message}_`;
     });
+
+    // ======== AUDIO (Web Audio API — procedural, no files) ========
+    let audioCtx = null;
+    function ensureAudio() {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      return audioCtx;
+    }
+
+    // Countdown beep: short tone
+    function playBeep(freq, duration, volume = 0.3) {
+      const ctx = ensureAudio();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'square';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(volume, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + duration);
+    }
+
+    // Hoofbeat thud: punchy noise hit with mid-range
+    function playHoof(vol = 0.35) {
+      const ctx = ensureAudio();
+      const dur = 0.08;
+      const bufferSize = Math.floor(ctx.sampleRate * dur);
+      const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        const t = i / ctx.sampleRate;
+        const env = Math.exp(-t * 40);
+        // Mix noise with a low tone for body
+        data[i] = ((Math.random() * 2 - 1) * 0.6 + Math.sin(t * 300) * 0.4) * env;
+      }
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.value = 400 + Math.random() * 300;
+      filter.Q.value = 0.8;
+      const gain = ctx.createGain();
+      gain.gain.value = vol;
+      src.connect(filter);
+      filter.connect(gain);
+      gain.connect(ctx.destination);
+      src.start();
+    }
+
+    // Hoofbeat loop — gallop rhythm while racing
+    let hoofInterval = null;
+    function startHoofbeats() {
+      if (hoofInterval) return;
+      hoofInterval = setInterval(() => {
+        // Gallop pattern: DA-da-dum (3 beats per cycle)
+        playHoof(0.4);
+        setTimeout(() => playHoof(0.25), 55);
+        setTimeout(() => playHoof(0.3), 130);
+      }, 200);
+    }
+    function stopHoofbeats() {
+      if (hoofInterval) { clearInterval(hoofInterval); hoofInterval = null; }
+    }
 
     // ======== COUNTDOWN ========
     function startCountdown() {
@@ -854,15 +790,19 @@
       cdEl.style.display = 'block';
       let count = 3;
       cdEl.textContent = `> ${count}_`;
+      playBeep(440, 0.15, 0.25);
       const interval = setInterval(() => {
         count--;
         if (count > 0) {
           cdEl.textContent = `> ${count}_`;
+          playBeep(440, 0.15, 0.25);
         } else if (count === 0) {
           cdEl.textContent = '> RUN_';
           cdEl.className = 'go';
+          playBeep(880, 0.4, 0.35);
           raceStarted = true;
           raceStartTime = clock.getElapsedTime();
+          startHoofbeats();
         } else {
           cdEl.style.display = 'none';
           cdEl.className = '';
@@ -922,12 +862,64 @@
         // Move each bull forward
         for (const bull of bulls) {
           if (bull.finished) {
-            if (bull.racePos < FINISH_X + 10) {
-              bull.racePos += bull.speed * 0.2 * dt;
-              bull.group.position.x = bull.racePos;
-              animateBull(bull, raceTime * (bull.speed / 4));
+            const t = elapsed - bull.finishTime;
+
+            // ---- WINNER: Attack_Run celebration ----
+            if (bull.finishRank === 1 && !bull.isWalking) {
+              const moveSpeed = bull.speed * 0.5;
+              bull.racePos += moveSpeed * dt;
+              if (!bull.attackStarted) {
+                bull.attackStarted = true;
+                bull.runAction.fadeOut(0.4);
+                bull.attackRunAction.reset().fadeIn(0.4).play();
+                bull.attackRunAction.timeScale = 1.0;
+              }
             }
+            // ---- Phase 1: Decelerate, run/attack → walk ----
+            else if (t < bull.postDecel) {
+              const moveSpeed = 2.0 + (bull.speed * 0.3) * (1 - t / bull.postDecel);
+              bull.racePos += moveSpeed * dt;
+              if (!bull.isWalking) {
+                bull.isWalking = true;
+                bull.runAction.fadeOut(0.8);
+                bull.walkAction.reset().fadeIn(0.8).play();
+              }
+              bull.walkAction.timeScale = moveSpeed / 1.5;
+            }
+            // ---- Phase 2: Walk (varied duration per bull) ----
+            else if (t < bull.postWalkEnd) {
+              bull.isWalking = true;
+              const progress = (t - bull.postDecel) / (bull.postWalkEnd - bull.postDecel);
+              const moveSpeed = 1.8 * Math.max(0.1, 1 - progress * 0.8);
+              bull.racePos += moveSpeed * dt;
+              bull.walkAction.timeScale = moveSpeed / 1.5;
+            }
+            // ---- Phase 3: Random idle animation ----
+            else if (t < bull.postIdleEnd) {
+              if (!bull.isIdling) {
+                bull.isIdling = true;
+                bull.walkAction.fadeOut(0.8);
+                bull.restIdleAction.reset().fadeIn(0.8).play();
+              }
+            }
+            // ---- Phase 4: Lie down ----
+            else if (!bull.isLying) {
+              bull.isLying = true;
+              bull.restIdleAction.fadeOut(1.0);
+              bull.lieStartAction.reset().fadeIn(1.0).play();
+            }
+
+            bull.group.position.x = bull.racePos;
+            bull.mixer.update(dt);
             continue;
+          }
+
+          // Transition idle → run on first racing frame
+          if (!bull.isRunning) {
+            bull.isRunning = true;
+            bull.runAction.timeScale = 0.8 + (bull.speed / 15) * 0.6;
+            bull.idleAction.fadeOut(0.3);
+            bull.runAction.reset().fadeIn(0.3).play();
           }
 
           const surge = Math.sin(raceTime * 1.5 + bull.phase) * 1.0
@@ -937,20 +929,23 @@
 
           if (bull.racePos >= FINISH_X) {
             bull.finished = true;
+            bull.finishTime = elapsed;
             bull.finishRank = nextRank++;
             if (bull.finishRank === 1) {
               const wd = document.getElementById('winner');
               document.getElementById('winner-body').innerHTML =
                 `> race_complete --status OK\n` +
-                `> winner: <span class="name" style="color:${bull.color}">${bull.name}</span>` +
-                `<div class="prompt">> press F5 to race again_</div>`;
+                `> winner: <span class="name" style="color:${bull.color}">${bull.name}</span>`;
               wd.style.display = 'block';
             }
-            if (nextRank > NUM_BULLS) raceOver = true;
+            if (nextRank > NUM_BULLS) { raceOver = true; stopHoofbeats(); }
           }
 
           bull.group.position.x = bull.racePos;
-          animateBull(bull, raceTime * (bull.speed / 4));
+          bull.mixer.update(dt);
+
+          // Emit dust at hooves
+          emitDust(bull.racePos - 1, 0, bull.laneZ, currentSpeed);
         }
 
         // ---- CAMERA FOLLOW ----
@@ -985,10 +980,34 @@
         speedLines.position.x = camTrackX;
 
       } else if (bulls.length > 0) {
-        // Pre-race: bulls stand still (no animation), camera free to orbit
+        // Pre-race: bulls walk up to the start line
+        let allArrived = true;
         for (const bull of bulls) {
+          if (!bull.arrived) {
+            // Walk forward toward start position
+            bull.racePos += bull.walkSpeed * dt;
+            // Sync walk animation speed to movement speed
+            bull.walkAction.timeScale = bull.walkSpeed / 1.5;
+            if (bull.racePos >= bull.startTarget) {
+              bull.racePos = bull.startTarget;
+              bull.arrived = true;
+              // Transition walk → idle at the line
+              bull.walkAction.fadeOut(0.6);
+              bull.idleAction.reset().fadeIn(0.6).play();
+            } else {
+              allArrived = false;
+            }
+          }
           bull.group.position.x = bull.racePos;
+          bull.mixer.update(dt);
         }
+
+        // Start countdown once every bull is at the line
+        if (allArrived && !countdownStarted) {
+          countdownStarted = true;
+          startCountdown();
+        }
+
         if (!cameraReady) {
           camera.position.set(-12, 7, 18);
           controls.target.set(0, 1.2, 0);
