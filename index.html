@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>BULL_RACE // TERMINAL</title>
+  <title>MOONAD // moonad.fun</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&family=VT323&display=swap" rel="stylesheet">
   <style>
@@ -163,7 +163,7 @@
   <div id="hud">
     <div id="title-bar">
       <span class="sys">[SYS]</span>
-      <span class="title-text">&gt; BULL_RACE v1.0 // 500M SPRINT</span>
+      <span class="title-text">&gt; MOONAD // 500M SPRINT</span>
       <span class="sys" id="clock-display">00:00.0</span>
     </div>
     <div id="leaderboard">
@@ -176,7 +176,7 @@
     <span id="speed-info" class="warn">SPD: --.- M/S</span>
     <span class="sys">PRESS [ESC] TO ORBIT</span>
   </div>
-  <div id="loading">&gt; loading_assets</div>
+  <div id="loading">&gt; initializing_bull_run</div>
   <div id="winner">
     <div id="winner-header"><span>+-- RACE COMPLETE --+</span><button id="winner-close" onclick="document.getElementById('winner').style.display='none'">[X]</button></div>
     <div id="winner-body"></div>
@@ -712,7 +712,7 @@
 
     }, (progress) => {
       if (progress.total > 0) {
-        document.getElementById('loading').textContent = `> loading_assets [${Math.round(progress.loaded/progress.total*100)}%]`;
+        document.getElementById('loading').textContent = `> initializing_bull_run [${Math.round(progress.loaded/progress.total*100)}%]`;
       }
     }, (error) => {
       console.error('Error:', error);
@@ -742,47 +742,9 @@
       osc.stop(ctx.currentTime + duration);
     }
 
-    // Hoofbeat thud: punchy noise hit with mid-range
-    function playHoof(vol = 0.35) {
-      const ctx = ensureAudio();
-      const dur = 0.08;
-      const bufferSize = Math.floor(ctx.sampleRate * dur);
-      const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-      const data = buffer.getChannelData(0);
-      for (let i = 0; i < bufferSize; i++) {
-        const t = i / ctx.sampleRate;
-        const env = Math.exp(-t * 40);
-        // Mix noise with a low tone for body
-        data[i] = ((Math.random() * 2 - 1) * 0.6 + Math.sin(t * 300) * 0.4) * env;
-      }
-      const src = ctx.createBufferSource();
-      src.buffer = buffer;
-      const filter = ctx.createBiquadFilter();
-      filter.type = 'bandpass';
-      filter.frequency.value = 400 + Math.random() * 300;
-      filter.Q.value = 0.8;
-      const gain = ctx.createGain();
-      gain.gain.value = vol;
-      src.connect(filter);
-      filter.connect(gain);
-      gain.connect(ctx.destination);
-      src.start();
-    }
-
-    // Hoofbeat loop — gallop rhythm while racing
-    let hoofInterval = null;
-    function startHoofbeats() {
-      if (hoofInterval) return;
-      hoofInterval = setInterval(() => {
-        // Gallop pattern: DA-da-dum (3 beats per cycle)
-        playHoof(0.4);
-        setTimeout(() => playHoof(0.25), 55);
-        setTimeout(() => playHoof(0.3), 130);
-      }, 200);
-    }
-    function stopHoofbeats() {
-      if (hoofInterval) { clearInterval(hoofInterval); hoofInterval = null; }
-    }
+    // Placeholder for future running sound (file-based)
+    function startHoofbeats() {}
+    function stopHoofbeats() {}
 
     // ======== COUNTDOWN ========
     function startCountdown() {
