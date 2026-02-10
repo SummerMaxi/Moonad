@@ -1,0 +1,93 @@
+<design-system>
+  <philosophy>
+    The Terminal CLI aesthetic pays homage to the raw power of the command line.
+    It strips away the "user interface" layers to reveal the "system" underneath.
+    It is brutally functional, high-contrast, and authentically retro.
+    The vibe is Cyber-Industrial, Hacker, and System-Level.
+  </philosophy>
+
+  <key-signatures>
+    <signature name="monospace">Every character is monospaced - JetBrains Mono, Fira Code, or VT323</signature>
+    <signature name="cursor">The blinking block or underscore cursor is the heartbeat</signature>
+    <signature name="shell-metaphors">Use prompt chars (&gt;, $, ~), command flags (--help), status codes ([OK], [ERR])</signature>
+    <signature name="scanlines">Faint CRT scanline effect for depth without ruining readability</signature>
+  </key-signatures>
+
+  <tokens>
+    <colors mode="dark-only">
+      <color name="background" value="#0a0a0a" note="Deep black, not pure OLED to allow scanlines"/>
+      <color name="primary" value="#33ff00" note="Classic Terminal Green"/>
+      <color name="secondary" value="#ffb000" note="Amber/Orange for warnings or accents"/>
+      <color name="muted" value="#1f521f" note="Dimmed green for borders/inactive"/>
+      <color name="accent" value="#33ff00" note="Same as primary for cursors/active"/>
+      <color name="error" value="#ff3333" note="Bright Red"/>
+      <color name="border" value="#1f521f" note="Dimmed green"/>
+    </colors>
+
+    <typography>
+      <font-stack>JetBrains Mono, Fira Code, VT323, monospace</font-stack>
+      <headers>ALL CAPS</headers>
+      <body>lowercase acceptable</body>
+      <scale>strict modular, snap to grid</scale>
+      <text-shadow>0 0 5px rgba(51, 255, 0, 0.5)</text-shadow>
+    </typography>
+
+    <borders>
+      <radius>0px - absolutely no rounded corners</radius>
+      <style>1px solid or dashed, crucial for defining windows/panes</style>
+    </borders>
+
+    <effects>
+      <shadows>No drop shadows</shadows>
+      <glow>text-shadow: 0 0 5px rgba(51, 255, 0, 0.5)</glow>
+      <crt>pointer-events-none overlay with scanlines</crt>
+    </effects>
+  </tokens>
+
+  <components>
+    <buttons>
+      <structure>Text in brackets: [ INITIATE ]</structure>
+      <hover>Background fills primary, text inverts to black</hover>
+      <active>1px shift or rapid blink</active>
+    </buttons>
+
+    <cards>
+      <structure>Black box with 1px green border</structure>
+      <header>Title bar: +--- SYSTEM STATUS ---+</header>
+      <content>Padded monospaced text</content>
+    </cards>
+
+    <inputs>
+      <style>No box, just a prompt: user@host:~$ followed by field</style>
+      <cursor>Blinking block at caret</cursor>
+      <focus>No ring, just blinking cursor</focus>
+    </inputs>
+  </components>
+
+  <layout>
+    <strategy>Feel like tmux or vim splits</strategy>
+    <grid>Strict character grid alignment</grid>
+    <separators>ASCII dividers: ---- or ==== or //</separators>
+  </layout>
+
+  <bold-factor>
+    <ascii-art>Use for logos or key graphics</ascii-art>
+    <typewriter>Headlines appear character by character</typewriter>
+    <data-viz>Progress bars [||||||.....] not pie charts</data-viz>
+  </bold-factor>
+
+  <animation>
+    <blink>animate-blink for cursor</blink>
+    <glitch>Subtle text offsets on hover</glitch>
+    <typing>typing-demo for hero text</typing>
+  </animation>
+
+  <accessibility>
+    <contrast>Bright green on black exceeds AA</contrast>
+    <focus>Inverted colors for high visibility</focus>
+  </accessibility>
+
+  <responsive>
+    <mobile>Windows stack vertically, watch monospace overflow, wrap with \ indicator</mobile>
+  </responsive>
+</design-system>

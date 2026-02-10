@@ -1,0 +1,1028 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BULL_RACE // TERMINAL</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&family=VT323&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0a0a;
+      --primary: #33ff00;
+      --secondary: #ffb000;
+      --muted: #1f521f;
+      --error: #ff3333;
+      --border: #1f521f;
+      --font: 'JetBrains Mono', 'Fira Code', monospace;
+      --font-retro: 'VT323', monospace;
+      --glow: 0 0 5px rgba(51, 255, 0, 0.5);
+      --glow-strong: 0 0 10px rgba(51, 255, 0, 0.7), 0 0 20px rgba(51, 255, 0, 0.3);
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: var(--bg); font-family: var(--font); }
+    canvas { display: block; }
+
+    /* CRT Scanline overlay */
+    #crt-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none; z-index: 100;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0, 0, 0, 0.08) 2px,
+        rgba(0, 0, 0, 0.08) 4px
+      );
+    }
+    #crt-overlay::after {
+      content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.4) 100%);
+    }
+
+    #hud {
+      position: absolute; top: 0; left: 0; width: 100%; pointer-events: none;
+      font-family: var(--font); z-index: 50;
+    }
+
+    /* Title bar — like a terminal window header */
+    #title-bar {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 6px 12px;
+      background: rgba(10, 10, 10, 0.85);
+      border-bottom: 1px solid var(--muted);
+      font-size: 11px; color: var(--primary);
+      text-shadow: var(--glow);
+    }
+    #title-bar .sys { color: var(--muted); }
+    #title-bar .title-text { letter-spacing: 2px; font-weight: 700; }
+
+    /* Leaderboard — terminal pane */
+    #leaderboard {
+      position: absolute; top: 35px; right: 10px;
+      background: rgba(10, 10, 10, 0.9);
+      border: 1px solid var(--muted);
+      border-radius: 0;
+      padding: 0; min-width: 240px;
+      color: var(--primary); font-size: 11px; line-height: 1;
+      text-shadow: var(--glow);
+    }
+    #lb-header {
+      padding: 4px 8px;
+      background: var(--primary); color: var(--bg);
+      font-weight: 700; font-size: 10px; letter-spacing: 1px;
+      text-shadow: none;
+    }
+    #lb-body { padding: 6px 8px; }
+    #leaderboard .lane {
+      display: flex; align-items: center; gap: 4px;
+      padding: 2px 0; font-size: 11px;
+      border-bottom: 1px solid rgba(31, 82, 31, 0.3);
+    }
+    #leaderboard .lane:last-child { border-bottom: none; }
+    #leaderboard .dot {
+      width: 6px; height: 6px; border-radius: 0; display: inline-block; flex-shrink: 0;
+    }
+    #leaderboard .pos { font-weight: 700; width: 20px; color: var(--muted); }
+    #leaderboard .name-text { flex: 1; }
+    #leaderboard .medal { color: var(--secondary); }
+    #leaderboard .done { color: var(--primary); font-size: 9px; }
+
+    /* Race stats bar — bottom (fixed to viewport) */
+    #stats-bar {
+      position: fixed; bottom: 0; left: 0; width: 100%;
+      padding: 5px 12px;
+      background: rgba(10, 10, 10, 0.85);
+      border-top: 1px solid var(--muted);
+      font-size: 10px; color: var(--muted);
+      display: flex; justify-content: space-between;
+      text-shadow: var(--glow);
+      z-index: 50; pointer-events: none;
+    }
+    #stats-bar .active { color: var(--primary); }
+    #stats-bar .warn { color: var(--secondary); }
+
+    /* Loading screen */
+    #loading {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      color: var(--primary); font-family: var(--font); font-size: 14px;
+      text-shadow: var(--glow-strong);
+    }
+    #loading::after {
+      content: '_'; animation: blink 0.6s step-end infinite;
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; } 50% { opacity: 0; }
+    }
+
+    /* Winner announcement — terminal alert */
+    #winner {
+      display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      background: var(--bg);
+      color: var(--secondary);
+      font-family: var(--font); font-size: 16px;
+      padding: 0; border: 1px solid var(--secondary);
+      border-radius: 0; text-align: left;
+      text-shadow: 0 0 8px rgba(255, 176, 0, 0.6);
+      min-width: 320px; z-index: 60;
+    }
+    #winner-header {
+      padding: 4px 8px;
+      background: var(--secondary); color: var(--bg);
+      font-weight: 700; font-size: 10px; letter-spacing: 1px;
+    }
+    #winner-body {
+      padding: 16px;
+    }
+    #winner .name {
+      font-size: 22px; display: block; margin-top: 8px;
+      font-weight: 800; letter-spacing: 2px;
+    }
+    #winner .prompt { color: var(--muted); font-size: 11px; margin-top: 10px; }
+
+    /* Countdown */
+    #countdown {
+      display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      color: var(--primary); font-family: var(--font-retro); font-size: 120px;
+      text-shadow: var(--glow-strong);
+      z-index: 60;
+    }
+    #countdown.go { color: var(--secondary); text-shadow: 0 0 15px rgba(255,176,0,0.7); }
+  </style>
+</head>
+<body>
+  <div id="crt-overlay"></div>
+  <div id="hud">
+    <div id="title-bar">
+      <span class="sys">[SYS]</span>
+      <span class="title-text">&gt; BULL_RACE v1.0 // 500M SPRINT</span>
+      <span class="sys" id="clock-display">00:00.0</span>
+    </div>
+    <div id="leaderboard">
+      <div id="lb-header">+-- LEADERBOARD --+</div>
+      <div id="lb-body"></div>
+    </div>
+  </div>
+  <div id="stats-bar">
+    <span class="active" id="track-info">&gt; TRACK: 500M | 8 BULLS</span>
+    <span id="speed-info" class="warn">SPD: --.- M/S</span>
+    <span class="sys">PRESS [ESC] TO ORBIT</span>
+  </div>
+  <div id="loading">&gt; loading_assets</div>
+  <div id="winner">
+    <div id="winner-header">+-- RACE COMPLETE --+</div>
+    <div id="winner-body"></div>
+  </div>
+  <div id="countdown"></div>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+
+    const NUM_BULLS = 8;
+    const LANE_WIDTH = 2.4;
+    const FINISH_X = 500;  // 500 meters
+
+    // Terminal wireframe colors — all green/amber spectrum
+    const bullColors = [
+      { name: 'Crimson Thunder', wire: 0xff3333, dot: '#ff3333' },
+      { name: 'Midnight Storm',  wire: 0x33ccff, dot: '#33ccff' },
+      { name: 'Scarlet Blaze',   wire: 0xff6600, dot: '#ff6600' },
+      { name: 'Emerald Fury',    wire: 0x33ff00, dot: '#33ff00' },
+      { name: 'Golden Horns',    wire: 0xffb000, dot: '#ffb000' },
+      { name: 'Silver Bullet',   wire: 0xcccccc, dot: '#cccccc' },
+      { name: 'Violet Charge',   wire: 0xcc33ff, dot: '#cc33ff' },
+      { name: 'Copper Beast',    wire: 0xff9933, dot: '#ff9933' },
+    ];
+
+    // ======== SCENE ========
+    const scene = new THREE.Scene();
+
+    // Pure black background — terminal void
+    scene.background = new THREE.Color(0x000000);
+    scene.fog = new THREE.FogExp2(0x000000, 0.004);
+
+    // Wider FOV for speed sensation
+    const camera = new THREE.PerspectiveCamera(65, innerWidth / innerHeight, 0.1, 600);
+    camera.position.set(-12, 6, 12);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.shadowMap.enabled = false;  // no shadows in wireframe world
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.target.set(0, 1.5, 0);
+
+    // ======== LIGHTING — minimal, just enough for wireframe glow ========
+    scene.add(new THREE.AmbientLight(0x33ff00, 0.8));
+    const sun = new THREE.DirectionalLight(0x33ff00, 0.5);
+    sun.position.set(10, 15, 8);
+    scene.add(sun);
+
+    // ======== TRACK & ENVIRONMENT — TERMINAL WIREFRAME AESTHETIC ========
+    const trackWidth = NUM_BULLS * LANE_WIDTH + 2;
+    const TRACK_LEN = 600;
+
+    // ---- INFINITE GRID FLOOR ----
+    // Glowing green grid on pure black — the signature terminal look
+    const gridHelper = new THREE.GridHelper(TRACK_LEN, TRACK_LEN / 2, 0x1f521f, 0x0a2a0a);
+    gridHelper.position.x = FINISH_X / 2;
+    gridHelper.material.transparent = true;
+    gridHelper.material.opacity = 0.4;
+    scene.add(gridHelper);
+
+    // Brighter grid just for the track area
+    const trackGrid = new THREE.GridHelper(TRACK_LEN, TRACK_LEN / 2, 0x33ff00, 0x1f521f);
+    trackGrid.position.x = FINISH_X / 2;
+    trackGrid.position.y = 0.005;
+    // Clip to track width using a narrow plane
+    trackGrid.material.transparent = true;
+    trackGrid.material.opacity = 0.15;
+    scene.add(trackGrid);
+
+    // Lane dividers — glowing green lines using LineSegments
+    const laneMat = new THREE.LineBasicMaterial({ color: 0x33ff00, transparent: true, opacity: 0.7 });
+    for (let lane = 0; lane <= NUM_BULLS; lane++) {
+      const z = (lane - NUM_BULLS / 2) * LANE_WIDTH;
+      const pts = [new THREE.Vector3(-10, 0.02, z), new THREE.Vector3(FINISH_X + 50, 0.02, z)];
+      const lineGeo = new THREE.BufferGeometry().setFromPoints(pts);
+      scene.add(new THREE.Line(lineGeo, laneMat));
+    }
+
+    // ======== TRACK-SIDE MARKERS — wireframe poles ========
+    const markerGreenMat = new THREE.MeshBasicMaterial({ color: 0x33ff00, wireframe: true });
+    const markerAmberMat = new THREE.MeshBasicMaterial({ color: 0xffb000, wireframe: true });
+    const markerPostGeo = new THREE.CylinderGeometry(0.08, 0.08, 2.0, 4);
+    const markerTopGeo = new THREE.OctahedronGeometry(0.15, 0);
+    for (let x = 0; x <= FINISH_X + 20; x += 10) {
+      for (let side = -1; side <= 1; side += 2) {
+        const mat = x % 50 === 0 ? markerAmberMat : markerGreenMat;
+        const post = new THREE.Mesh(markerPostGeo, mat);
+        post.position.set(x, 1.0, side * (trackWidth / 2 + 1.5));
+        scene.add(post);
+        const top = new THREE.Mesh(markerTopGeo, mat);
+        top.position.set(x, 2.1, side * (trackWidth / 2 + 1.5));
+        scene.add(top);
+      }
+    }
+
+    // Distance number signs every 50m — terminal green text on black
+    for (let x = 50; x <= FINISH_X; x += 50) {
+      for (let side = -1; side <= 1; side += 2) {
+        const signCanvas = document.createElement('canvas');
+        signCanvas.width = 64; signCanvas.height = 32;
+        const sCtx = signCanvas.getContext('2d');
+        sCtx.fillStyle = '#000000';
+        sCtx.fillRect(0, 0, 64, 32);
+        sCtx.strokeStyle = '#33ff00';
+        sCtx.lineWidth = 1;
+        sCtx.strokeRect(1, 1, 62, 30);
+        sCtx.fillStyle = '#33ff00';
+        sCtx.font = 'bold 20px monospace';
+        sCtx.textAlign = 'center';
+        sCtx.textBaseline = 'middle';
+        sCtx.fillText(`${x}M`, 32, 16);
+        const signTex = new THREE.CanvasTexture(signCanvas);
+        const signPlane = new THREE.Mesh(
+          new THREE.PlaneGeometry(0.8, 0.4),
+          new THREE.MeshBasicMaterial({ map: signTex, transparent: true })
+        );
+        signPlane.position.set(x, 2.4, side * (trackWidth / 2 + 1.5));
+        signPlane.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2;
+        scene.add(signPlane);
+      }
+    }
+
+    // Ground chevrons — glowing scan lines on track
+    const chevronMat = new THREE.LineBasicMaterial({ color: 0x33ff00, transparent: true, opacity: 0.06 });
+    for (let x = 0; x <= FINISH_X + 20; x += 5) {
+      const pts = [
+        new THREE.Vector3(x, 0.01, -trackWidth * 0.3),
+        new THREE.Vector3(x, 0.01, trackWidth * 0.3)
+      ];
+      scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), chevronMat));
+    }
+
+    // Fence along track — wireframe boxes
+    const FENCE_COUNT = 250;
+    const fencePostGeo = new THREE.BoxGeometry(0.06, 1.0, 0.06);
+    const fenceRailGeo = new THREE.BoxGeometry(2.5, 0.04, 0.04);
+    const fenceMat = new THREE.MeshBasicMaterial({ color: 0x1f521f, wireframe: true });
+    for (let side = -1; side <= 1; side += 2) {
+      const z = side * (trackWidth / 2 + 2.5);
+      const posts = new THREE.InstancedMesh(fencePostGeo, fenceMat, FENCE_COUNT);
+      const rails1 = new THREE.InstancedMesh(fenceRailGeo, fenceMat, FENCE_COUNT - 1);
+      const rails2 = new THREE.InstancedMesh(fenceRailGeo, fenceMat, FENCE_COUNT - 1);
+      const m = new THREE.Matrix4();
+      for (let i = 0; i < FENCE_COUNT; i++) {
+        m.makeTranslation(-10 + i * 2.5, 0.5, z);
+        posts.setMatrixAt(i, m);
+        if (i < FENCE_COUNT - 1) {
+          m.makeTranslation(-10 + i * 2.5 + 1.25, 0.75, z);
+          rails1.setMatrixAt(i, m);
+          m.makeTranslation(-10 + i * 2.5 + 1.25, 0.35, z);
+          rails2.setMatrixAt(i, m);
+        }
+      }
+      scene.add(posts, rails1, rails2);
+    }
+
+    // Trees — wireframe geometric shapes (terminal aesthetic)
+    const treeWireMat = new THREE.MeshBasicMaterial({ color: 0x1f521f, wireframe: true });
+    const treeGlowMat = new THREE.MeshBasicMaterial({ color: 0x33ff00, wireframe: true, transparent: true, opacity: 0.3 });
+    for (let side = -1; side <= 1; side += 2) {
+      for (let i = 0; i < 80; i++) {
+        const g = new THREE.Group();
+        // Trunk — wireframe cylinder
+        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 1.5, 4), treeWireMat);
+        trunk.position.y = 0.75;
+        g.add(trunk);
+        // Crown — wireframe icosahedron (looks cool and geometric)
+        const crownGeo = Math.random() > 0.5
+          ? new THREE.IcosahedronGeometry(0.7 + Math.random() * 0.5, 0)
+          : new THREE.OctahedronGeometry(0.6 + Math.random() * 0.4, 0);
+        const crown = new THREE.Mesh(crownGeo, Math.random() > 0.3 ? treeWireMat : treeGlowMat);
+        crown.position.y = 1.8 + Math.random() * 0.5;
+        crown.rotation.y = Math.random() * Math.PI;
+        g.add(crown);
+        g.position.set(
+          -20 + i * 7 + Math.random() * 4,
+          0,
+          side * (trackWidth / 2 + 5 + Math.random() * 15)
+        );
+        const s = 0.6 + Math.random() * 1.0;
+        g.scale.setScalar(s);
+        scene.add(g);
+      }
+    }
+
+    // Start line — glowing green wireframe gate
+    const startGateMat = new THREE.MeshBasicMaterial({ color: 0x33ff00, wireframe: true });
+    const sp1 = new THREE.Mesh(new THREE.BoxGeometry(0.15, 3.5, 0.15), startGateMat);
+    sp1.position.set(0, 1.75, -trackWidth / 2 - 2);
+    scene.add(sp1);
+    const sp2 = sp1.clone();
+    sp2.position.z = trackWidth / 2 + 2;
+    scene.add(sp2);
+    const startBar = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, trackWidth + 4.2), startGateMat);
+    startBar.position.set(0, 3.5, 0);
+    scene.add(startBar);
+    // START text on ground
+    const startLineMat = new THREE.LineBasicMaterial({ color: 0x33ff00 });
+    for (let z = -trackWidth / 2; z <= trackWidth / 2; z += 0.5) {
+      const pts = [new THREE.Vector3(-0.5, 0.02, z), new THREE.Vector3(0.5, 0.02, z)];
+      scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), startLineMat));
+    }
+
+    // Finish line — glowing amber wireframe arch
+    const finishGateMat = new THREE.MeshBasicMaterial({ color: 0xffb000, wireframe: true });
+    const fp1 = new THREE.Mesh(new THREE.BoxGeometry(0.2, 4.5, 0.2), finishGateMat);
+    fp1.position.set(FINISH_X, 2.25, -trackWidth / 2 - 2);
+    scene.add(fp1);
+    const fp2 = fp1.clone();
+    fp2.position.z = trackWidth / 2 + 2;
+    scene.add(fp2);
+    const finishBar = new THREE.Mesh(
+      new THREE.BoxGeometry(0.15, 0.35, trackWidth + 4.2),
+      finishGateMat
+    );
+    finishBar.position.set(FINISH_X, 4.5, 0);
+    scene.add(finishBar);
+    // FINISH text
+    const finTextCanvas = document.createElement('canvas');
+    finTextCanvas.width = 512; finTextCanvas.height = 64;
+    const ftCtx = finTextCanvas.getContext('2d');
+    ftCtx.fillStyle = '#000000';
+    ftCtx.fillRect(0, 0, 512, 64);
+    ftCtx.fillStyle = '#ffb000';
+    ftCtx.font = 'bold 42px monospace';
+    ftCtx.textAlign = 'center';
+    ftCtx.textBaseline = 'middle';
+    ftCtx.fillText('> F I N I S H _', 256, 32);
+    const finTextTex = new THREE.CanvasTexture(finTextCanvas);
+    for (let rot of [Math.PI / 2, -Math.PI / 2]) {
+      const plane = new THREE.Mesh(
+        new THREE.PlaneGeometry(trackWidth + 4, 0.6),
+        new THREE.MeshBasicMaterial({ map: finTextTex, transparent: true })
+      );
+      plane.position.set(FINISH_X, 4.8, 0);
+      plane.rotation.y = rot;
+      scene.add(plane);
+    }
+    // Finish cross-hatch on ground
+    const finLineMat = new THREE.LineBasicMaterial({ color: 0xffb000, transparent: true, opacity: 0.5 });
+    for (let z = -trackWidth / 2; z <= trackWidth / 2; z += 0.5) {
+      const pts = [new THREE.Vector3(FINISH_X - 1, 0.02, z), new THREE.Vector3(FINISH_X + 1, 0.02, z)];
+      scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), finLineMat));
+    }
+
+    // ======== DUST PARTICLES ========
+    const dustCount = 300;
+    const dustPos = new Float32Array(dustCount * 3);
+    const dustVel = [];
+    for (let i = 0; i < dustCount; i++) {
+      dustPos[i * 3 + 1] = -10;
+      dustVel.push({ x: 0, y: 0, z: 0, life: 0 });
+    }
+    const dustGeo = new THREE.BufferGeometry();
+    dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
+    scene.add(new THREE.Points(dustGeo,
+      new THREE.PointsMaterial({ color: 0x33ff00, size: 0.1, transparent: true, opacity: 0.4 })
+    ));
+    let dustIdx = 0;
+    function emitDust(px, py, pz, speed) {
+      const count = Math.max(1, Math.floor(speed * 0.8));
+      for (let k = 0; k < count; k++) {
+        const i = dustIdx++ % dustCount;
+        dustPos[i * 3] = px + (Math.random() - 0.5) * 0.4;
+        dustPos[i * 3 + 1] = py + 0.05;
+        dustPos[i * 3 + 2] = pz + (Math.random() - 0.5) * 0.4;
+        dustVel[i] = {
+          x: -speed * 0.4 + Math.random() * 0.5,
+          y: 0.4 + Math.random() * 0.6,
+          z: (Math.random() - 0.5) * 1.0,
+          life: 0.8 + Math.random() * 0.5
+        };
+      }
+    }
+
+    // ======== SPEED LINE PARTICLES (green data streams streaking past) ========
+    const speedLineCount = 120;
+    const slPositions = new Float32Array(speedLineCount * 3);
+    const slVelocities = [];
+    for (let i = 0; i < speedLineCount; i++) {
+      slPositions[i * 3] = Math.random() * 40 - 20;
+      slPositions[i * 3 + 1] = 0.3 + Math.random() * 4;
+      slPositions[i * 3 + 2] = (Math.random() - 0.5) * 30;
+      slVelocities.push(-8 - Math.random() * 5);
+    }
+    const slGeo = new THREE.BufferGeometry();
+    slGeo.setAttribute('position', new THREE.BufferAttribute(slPositions, 3));
+    const speedLines = new THREE.Points(slGeo,
+      new THREE.PointsMaterial({ color: 0x33ff00, size: 0.04, transparent: true, opacity: 0.35, sizeAttenuation: true })
+    );
+    scene.add(speedLines);
+
+    // ======== LOAD FBX & SETUP BULLS ========
+    const clock = new THREE.Clock();
+    const bulls = [];
+    let bodyAxisGlobal = 'x';
+    let raceStarted = false;
+    let raceStartTime = 0;
+
+    function setupVertexAnimation(mesh, root) {
+      const geo = mesh.geometry;
+      const pos = geo.attributes.position;
+      const count = pos.count;
+      mesh.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(root);
+      const min = box.min, max = box.max;
+      const size = box.getSize(new THREE.Vector3());
+      const center = box.getCenter(new THREE.Vector3());
+      const bodyAxis = size.x > size.z ? 'x' : 'z';
+      const sideAxis = bodyAxis === 'x' ? 'z' : 'x';
+      bodyAxisGlobal = bodyAxis;
+
+      // Key thresholds for separating legs from belly/body
+      const bodyBottomY = min.y + size.y * 0.40;       // below 40% height = potential leg
+      const bodyMidX = center[bodyAxis];
+      const bodySideCenter = center[sideAxis];
+      const sideHalfWidth = size[sideAxis] / 2;
+      const bellyThreshold = sideHalfWidth * 0.50;     // must be >50% from center to be a leg (was 0.2)
+
+      const vertexRegions = new Int8Array(count);
+      const legWeights = new Float32Array(count);       // per-vertex animation weight (0=no anim, 1=full)
+      const worldPositions = new Float32Array(count * 3);
+
+      for (let i = 0; i < count; i++) {
+        const wp = new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i));
+        mesh.localToWorld(wp);
+        worldPositions[i * 3] = wp.x; worldPositions[i * 3 + 1] = wp.y; worldPositions[i * 3 + 2] = wp.z;
+        const bodyPos = wp[bodyAxis], sidePos = wp[sideAxis], height = wp.y;
+        const sideOffset = Math.abs(sidePos - bodySideCenter);
+
+        if (height < bodyBottomY && sideOffset > bellyThreshold) {
+          const isFront = bodyPos > bodyMidX, isLeft = sidePos > bodySideCenter;
+          if (isFront && isLeft) vertexRegions[i] = 1;
+          else if (isFront && !isLeft) vertexRegions[i] = 2;
+          else if (!isFront && isLeft) vertexRegions[i] = 3;
+          else vertexRegions[i] = 4;
+
+          // Smooth weight: vertices deep in the leg get full weight,
+          // vertices near body boundary get reduced weight (smooth blend)
+          const heightFactor = 1.0 - Math.max(0, Math.min(1, (height - min.y) / (bodyBottomY - min.y)));
+          // heightFactor: 0 at bodyBottomY (hip), 1 at ground
+          const sideFactor = Math.max(0, Math.min(1, (sideOffset - bellyThreshold) / (sideHalfWidth - bellyThreshold)));
+          legWeights[i] = Math.min(1, heightFactor * 0.7 + 0.3) * Math.min(1, sideFactor * 0.5 + 0.5);
+        } else {
+          const n = (bodyPos - min[bodyAxis]) / size[bodyAxis];
+          if (n > 0.82) vertexRegions[i] = 5;       // head
+          else if (n < 0.15) vertexRegions[i] = 6;   // tail
+          else vertexRegions[i] = 0;                  // body
+          legWeights[i] = 0;
+        }
+      }
+
+      // Compute leg pivots (hip/shoulder joints) — use the TOP of each leg group, not the average
+      const pivots = {};
+      const pivotGroups = { 1: [], 2: [], 3: [], 4: [] };
+      for (let i = 0; i < count; i++) {
+        const r = vertexRegions[i];
+        if (r >= 1 && r <= 4) {
+          pivotGroups[r].push(i);
+        }
+      }
+      for (let r = 1; r <= 4; r++) {
+        if (pivotGroups[r].length === 0) { pivots[r] = null; continue; }
+        // Pivot = highest point of the leg group (where it meets the body)
+        let maxY = -Infinity;
+        let sumA = 0, sumS = 0, cnt = 0;
+        for (const idx of pivotGroups[r]) {
+          const wy = worldPositions[idx * 3 + 1];
+          const wa = bodyAxis === 'x' ? worldPositions[idx * 3] : worldPositions[idx * 3 + 2];
+          const ws = sideAxis === 'x' ? worldPositions[idx * 3] : worldPositions[idx * 3 + 2];
+          if (wy > maxY) maxY = wy;
+          sumA += wa; sumS += ws; cnt++;
+        }
+        const pivot = new THREE.Vector3();
+        pivot.y = maxY;  // top of leg = joint
+        pivot[bodyAxis] = sumA / cnt;
+        pivot[sideAxis] = sumS / cnt;
+        pivots[r] = pivot;
+      }
+
+      return { mesh, vertexRegions, legWeights, worldPositions, pivots, bodyBottomY, bodyAxis, sideAxis, box: { min, max, size, center: center.clone() } };
+    }
+
+    // Gallop curve: asymmetric — quick forward snap, slower pull-back
+    function gallopCurve(phase) {
+      const p = ((phase % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+      if (p < Math.PI) {
+        return Math.sin(p);         // forward swing
+      } else {
+        return Math.sin(p) * 0.85;  // slightly slower return
+      }
+    }
+
+    // Knee bend curve: knee flexes (bends forward for front, back for rear) during swing phase
+    function kneeBendCurve(phase) {
+      const p = ((phase % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+      // Knee bends during forward swing (0 to PI), straightens during ground contact
+      if (p < Math.PI) {
+        return Math.sin(p * 2) * Math.max(0, Math.sin(p));  // bend during lift
+      }
+      return 0;  // straight during push-off / ground contact
+    }
+
+    function animateBull(bull, elapsed) {
+      const ad = bull.animData;
+      if (!ad) return;
+      const { mesh, vertexRegions, legWeights, worldPositions, pivots, bodyAxis, sideAxis, box } = ad;
+      const pos = mesh.geometry.attributes.position;
+      const count = pos.count;
+
+      const animSpeed = 12.0;
+      const t = elapsed * animSpeed + bull.phase;
+
+      // Transverse gallop pattern (typical of cattle)
+      const legPhases = {
+        1: t,                       // Front-left leads
+        2: t + Math.PI * 0.15,     // Front-right follows closely
+        3: t + Math.PI * 0.85,     // Rear-left
+        4: t + Math.PI * 1.0,      // Rear-right follows
+      };
+
+      // Subtle body bob
+      const bodyBobY = Math.sin(t * 2) * 0.02;
+
+      mesh.updateMatrixWorld(true);
+      const invMatrix = mesh.matrixWorld.clone().invert();
+      const groupDX = bull.group.position.x - (bull.setupGroupX || 0);
+
+      for (let i = 0; i < count; i++) {
+        const region = vertexRegions[i];
+        const wx = worldPositions[i*3], wy = worldPositions[i*3+1], wz = worldPositions[i*3+2];
+        let newX = wx, newY = wy, newZ = wz;
+
+        if (region >= 1 && region <= 4 && pivots[region]) {
+          const pivot = pivots[region];
+          const weight = legWeights[i];
+          const phase = legPhases[region];
+
+          // ---- SEGMENT 1: HIP/SHOULDER SWING ----
+          // The ENTIRE leg swings from the hip. Upper leg drives the motion.
+          const hipSwing = gallopCurve(phase) * 0.30;   // ~17° max
+
+          // How far down the leg (0 = hip, 1 = hoof)
+          const legLength = pivot.y - ad.box.min.y;
+          const distFromPivot = Math.max(0, pivot.y - wy);
+          const nDist = Math.min(1, distFromPivot / Math.max(0.01, legLength));
+
+          // Upper leg factor: ramps up quickly from hip.
+          // Even vertices at 10% down the leg get decent swing.
+          const upperFactor = Math.min(1, nDist * 2.5);  // reaches full at 40% down
+
+          // Rotate entire leg from hip pivot
+          let relY = wy - pivot.y;
+          let relA = (bodyAxis === 'x') ? (wx - pivot.x) : (wz - pivot.z);
+          const hipAngle = hipSwing * upperFactor * weight;
+          let c = Math.cos(hipAngle), s = Math.sin(hipAngle);
+          newY = pivot.y + relY * c - relA * s;
+          if (bodyAxis === 'x') newX = pivot.x + relY * s + relA * c;
+          else newZ = pivot.z + relY * s + relA * c;
+
+          // ---- SEGMENT 2: KNEE BEND ----
+          // Below the knee (~45% down), add extra bend on top of hip rotation.
+          // Knee bends during forward swing, straight during ground contact.
+          const kneeLine = 0.45;
+          if (nDist > kneeLine) {
+            const kneeBend = kneeBendCurve(phase) * 0.30;
+            const belowKnee = (nDist - kneeLine) / (1.0 - kneeLine);
+
+            // Knee pivot Y = hip minus 45% of leg length (already hip-rotated)
+            // We compute where the knee point ended up after hip rotation
+            const kneeOrigRelY = -legLength * kneeLine;  // relative to hip
+            const kneeOrigRelA = 0;
+            const kneePivY = pivot.y + kneeOrigRelY * c - kneeOrigRelA * s;
+            const kneePivA = (bodyAxis === 'x') ? pivot.x : pivot.z;
+
+            // Front legs: knee bends backward (-), rear legs: forward (+)
+            const kneeDir = (region <= 2) ? -1 : 1;
+            const kneeAngle = kneeBend * belowKnee * kneeDir * weight;
+            const kc = Math.cos(kneeAngle), ks = Math.sin(kneeAngle);
+
+            const rY = newY - kneePivY;
+            const rA = (bodyAxis === 'x') ? (newX - kneePivA) : (newZ - kneePivA);
+            newY = kneePivY + rY * kc - rA * ks;
+            if (bodyAxis === 'x') newX = kneePivA + rY * ks + rA * kc;
+            else newZ = kneePivA + rY * ks + rA * kc;
+          }
+
+          // ---- HOOF LIFT ----
+          // Hooves lift off the ground during forward swing
+          if (nDist > 0.75) {
+            const lift = gallopCurve(phase);
+            if (lift > 0) {
+              newY += lift * 0.08 * (nDist - 0.75) / 0.25 * weight;
+            }
+          }
+        } else if (region === 0) {
+          // Body: subtle bob
+          newY += bodyBobY;
+        } else if (region === 5) {
+          // Head: gentle nod synced with gallop
+          const headNod = Math.sin(t * 2 + 0.5) * 0.04;
+          const headDist = (bodyAxis === 'x')
+            ? Math.max(0, (wx - box.center.x) / (box.size.x * 0.5))
+            : Math.max(0, (wz - box.center[bodyAxis]) / (box.size[bodyAxis] * 0.5));
+          newY += headNod * Math.min(1, headDist);
+        } else if (region === 6) {
+          // Tail: gentle swish
+          const sw = Math.sin(t * 1.8) * 0.08;
+          const tailDist = (bodyAxis === 'x')
+            ? Math.max(0, (box.center.x - wx) / (box.size.x * 0.5))
+            : Math.max(0, (box.center[bodyAxis] - wz) / (box.size[bodyAxis] * 0.5));
+          const f = Math.min(1, tailDist);
+          if (ad.sideAxis === 'z') newZ += sw * f; else newX += sw * f;
+        }
+
+        const local = new THREE.Vector3(newX + groupDX, newY, newZ).applyMatrix4(invMatrix);
+        pos.setXYZ(i, local.x, local.y, local.z);
+      }
+      pos.needsUpdate = true;
+
+      // Emit dust from rear legs
+      const bullWorldX = bull.group.position.x;
+      const bullWorldZ = bull.laneZ;
+      if (pivots[3] && gallopCurve(legPhases[3]) > 0.5) {
+        emitDust(bullWorldX - 0.5, 0, bullWorldZ + 0.3, bull.speed);
+      }
+      if (pivots[4] && gallopCurve(legPhases[4]) > 0.5) {
+        emitDust(bullWorldX - 0.5, 0, bullWorldZ - 0.3, bull.speed);
+      }
+    }
+
+    // Load FBX and create 8 clones
+    const loader = new FBXLoader();
+    loader.load('FB.fbx', (fbx) => {
+      document.getElementById('loading').style.display = 'none';
+
+      const box0 = new THREE.Box3().setFromObject(fbx);
+      const size0 = box0.getSize(new THREE.Vector3());
+      const scale = 3.0 / size0.y;
+      fbx.scale.setScalar(scale);
+      box0.setFromObject(fbx);
+
+      let sourceMesh = null;
+      fbx.traverse(c => { if (c.isMesh && !sourceMesh) sourceMesh = c; });
+      if (!sourceMesh) { console.error('No mesh found'); return; }
+
+      const needsRotation = size0.z > size0.x;
+      console.log(`Model: x=${size0.x.toFixed(2)} y=${size0.y.toFixed(2)} z=${size0.z.toFixed(2)}, needsRotation=${needsRotation}`);
+
+      // --- Auto-detect which rotation makes head face +X ---
+      // Build a test bull once to figure out the correct Y rotation
+      let bestRotY = 0;
+      {
+        const testGroup = new THREE.Group();
+        const testBull = new THREE.Group();
+        const testMesh = new THREE.Mesh(sourceMesh.geometry, sourceMesh.material);
+        testMesh.position.copy(sourceMesh.position);
+        testMesh.rotation.copy(sourceMesh.rotation);
+        testMesh.scale.copy(sourceMesh.scale);
+        testBull.add(testMesh);
+        testBull.scale.copy(fbx.scale);
+        testGroup.add(testBull);
+
+        // Try all 4 cardinal rotations, pick the one where highest-Y vertices are at +X end
+        let bestScore = -Infinity;
+        for (const tryRot of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+          testBull.rotation.y = tryRot;
+          testGroup.updateMatrixWorld(true);
+          const tb = new THREE.Box3().setFromObject(testGroup);
+          const tc = tb.getCenter(new THREE.Vector3());
+          const ts = tb.getSize(new THREE.Vector3());
+
+          // Body should be longer along X than Z after correct rotation
+          if (ts.x < ts.z * 0.8) continue; // skip if body isn't along X
+
+          // Check: the +X end should have the head (highest Y vertices = horns)
+          let plusXMaxY = -Infinity, minusXMaxY = -Infinity;
+          const wp = new THREE.Vector3();
+          const pos = testMesh.geometry.attributes.position;
+          testMesh.updateMatrixWorld(true);
+          for (let vi = 0; vi < pos.count; vi += 5) {
+            wp.set(pos.getX(vi), pos.getY(vi), pos.getZ(vi));
+            testMesh.localToWorld(wp);
+            if (wp.x > tc.x) plusXMaxY = Math.max(plusXMaxY, wp.y);
+            else minusXMaxY = Math.max(minusXMaxY, wp.y);
+          }
+          // Score: head (horns) at +X end means plusXMaxY > minusXMaxY
+          // Also prefer body along X (wider X = better)
+          const score = (plusXMaxY - minusXMaxY) + (ts.x - ts.z) * 0.1;
+          if (score > bestScore) {
+            bestScore = score;
+            bestRotY = tryRot;
+          }
+        }
+        testGroup.remove(testBull);
+        console.log(`Auto-detected rotation: ${(bestRotY * 180 / Math.PI).toFixed(0)}°`);
+      }
+
+      for (let i = 0; i < NUM_BULLS; i++) {
+        const laneZ = (i - NUM_BULLS / 2 + 0.5) * LANE_WIDTH;
+        const laneGroup = new THREE.Group();
+        laneGroup.position.z = laneZ;
+
+        const bullGroup = new THREE.Group();
+        const clonedGeo = sourceMesh.geometry.clone();
+        const mesh = new THREE.Mesh(clonedGeo, new THREE.MeshBasicMaterial({
+          color: bullColors[i].wire,
+          wireframe: true,
+          transparent: true,
+          opacity: 0.85,
+        }));
+        mesh.position.copy(sourceMesh.position);
+        mesh.rotation.copy(sourceMesh.rotation);
+        mesh.scale.copy(sourceMesh.scale);
+
+        bullGroup.add(mesh);
+        bullGroup.scale.copy(fbx.scale);
+
+        // Apply auto-detected rotation so head faces +X (running direction)
+        bullGroup.rotation.y = bestRotY;
+
+        laneGroup.add(bullGroup);
+        laneGroup.updateMatrixWorld(true);
+        const bullBox = new THREE.Box3().setFromObject(laneGroup);
+        const bullCenter = bullBox.getCenter(new THREE.Vector3());
+
+        bullGroup.position.y -= bullBox.min.y;
+        bullGroup.position.x -= bullCenter.x;
+        bullGroup.position.z -= (bullCenter.z - laneZ);
+
+        scene.add(laneGroup);
+        laneGroup.updateMatrixWorld(true);
+
+        const animData = setupVertexAnimation(mesh, laneGroup);
+
+        bulls.push({
+          group: laneGroup,
+          mesh,
+          animData,
+          speed: 10 + Math.random() * 5,          // 10-15 m/s (realistic bull gallop)
+          phase: Math.random() * Math.PI * 2,
+          laneZ,
+          racePos: -3 - Math.random() * 2,        // staggered start positions
+          setupGroupX: laneGroup.position.x,       // world X when vertex anim was set up (0)
+          name: bullColors[i].name,
+          color: bullColors[i].dot,
+          finished: false,
+          finishRank: 0,
+        });
+      }
+
+      console.log(`${NUM_BULLS} bulls loaded — speeds: ${bulls.map(b => b.speed.toFixed(1)).join(', ')}`);
+
+      // Start countdown
+      startCountdown();
+
+    }, (progress) => {
+      if (progress.total > 0) {
+        document.getElementById('loading').textContent = `> loading_assets [${Math.round(progress.loaded/progress.total*100)}%]`;
+      }
+    }, (error) => {
+      console.error('Error:', error);
+      document.getElementById('loading').textContent = 'Error loading model.';
+    });
+
+    // ======== COUNTDOWN ========
+    function startCountdown() {
+      const cdEl = document.getElementById('countdown');
+      cdEl.style.display = 'block';
+      let count = 3;
+      cdEl.textContent = `> ${count}_`;
+      const interval = setInterval(() => {
+        count--;
+        if (count > 0) {
+          cdEl.textContent = `> ${count}_`;
+        } else if (count === 0) {
+          cdEl.textContent = '> RUN_';
+          cdEl.className = 'go';
+          raceStarted = true;
+          raceStartTime = clock.getElapsedTime();
+        } else {
+          cdEl.style.display = 'none';
+          cdEl.className = '';
+          clearInterval(interval);
+        }
+      }, 1000);
+    }
+
+    // ======== LEADERBOARD ========
+    let nextRank = 1;
+    let raceOver = false;
+
+    function updateLeaderboard() {
+      const sorted = [...bulls].sort((a, b) => {
+        if (a.finished && b.finished) return a.finishRank - b.finishRank;
+        if (a.finished) return -1;
+        if (b.finished) return 1;
+        return b.racePos - a.racePos;
+      });
+      const lb = document.getElementById('lb-body');
+      lb.innerHTML = sorted.map((b, i) => {
+        const medal = i === 0 ? ' <span class="medal">[1ST]</span>' : i === 1 ? ' <span class="medal">[2ND]</span>' : i === 2 ? ' <span class="medal">[3RD]</span>' : '';
+        const fin = b.finished ? ' <span class="done">[OK]</span>' : '';
+        const pct = Math.min(100, Math.max(0, (b.racePos / FINISH_X) * 100)).toFixed(0);
+        return `<div class="lane"><span class="pos">${String(i+1).padStart(2,'0')}.</span><span class="dot" style="background:${b.color}"></span><span class="name-text">${b.name}</span>${medal}${fin} ${pct}%</div>`;
+      }).join('');
+
+      // Update stats bar
+      if (raceStarted) {
+        const lead = sorted[0];
+        const elapsed = clock.getElapsedTime() - raceStartTime;
+        document.getElementById('clock-display').textContent = formatTime(elapsed);
+        document.getElementById('speed-info').textContent = `SPD: ${lead.speed.toFixed(1)} M/S | ${lead.name}`;
+        document.getElementById('track-info').textContent = `> POS: ${lead.racePos.toFixed(0)}M / ${FINISH_X}M`;
+      }
+    }
+
+    function formatTime(s) {
+      const m = Math.floor(s / 60);
+      const sec = s % 60;
+      return `${String(m).padStart(2,'0')}:${sec.toFixed(1).padStart(4,'0')}`;
+    }
+
+    // ======== ANIMATION ========
+    let camTrackX = 0;       // smoothed X that the camera tracks
+    let lastCamTrackX = 0;   // previous frame's value for computing delta
+    let cameraReady = false;
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const dt = Math.min(clock.getDelta(), 0.05);
+      const elapsed = clock.getElapsedTime();
+
+      if (bulls.length > 0 && raceStarted) {
+        const raceTime = elapsed - raceStartTime;
+
+        // Move each bull forward
+        for (const bull of bulls) {
+          if (bull.finished) {
+            if (bull.racePos < FINISH_X + 10) {
+              bull.racePos += bull.speed * 0.2 * dt;
+              bull.group.position.x = bull.racePos;
+              animateBull(bull, raceTime * (bull.speed / 4));
+            }
+            continue;
+          }
+
+          const surge = Math.sin(raceTime * 1.5 + bull.phase) * 1.0
+                      + Math.sin(raceTime * 0.5 + bull.phase * 2.3) * 0.6;
+          const currentSpeed = Math.max(1.0, bull.speed + surge);
+          bull.racePos += currentSpeed * dt;
+
+          if (bull.racePos >= FINISH_X) {
+            bull.finished = true;
+            bull.finishRank = nextRank++;
+            if (bull.finishRank === 1) {
+              const wd = document.getElementById('winner');
+              document.getElementById('winner-body').innerHTML =
+                `> race_complete --status OK\n` +
+                `> winner: <span class="name" style="color:${bull.color}">${bull.name}</span>` +
+                `<div class="prompt">> press F5 to race again_</div>`;
+              wd.style.display = 'block';
+            }
+            if (nextRank > NUM_BULLS) raceOver = true;
+          }
+
+          bull.group.position.x = bull.racePos;
+          animateBull(bull, raceTime * (bull.speed / 4));
+        }
+
+        // ---- CAMERA FOLLOW ----
+        // Compute where the camera should track (middle of the pack)
+        const sorted = [...bulls].sort((a, b) => b.racePos - a.racePos);
+        const leader = sorted[0].racePos;
+        const middle = sorted[Math.floor(NUM_BULLS / 2)].racePos;
+        const goalX = leader * 0.4 + middle * 0.6;
+        // Camera follows with lag — bulls run ahead, camera catches up
+        camTrackX += (goalX - camTrackX) * 1.5 * dt;
+
+        // Translate BOTH camera and target by the same delta.
+        // This slides the entire view along the track while preserving
+        // the user's orbit angle/zoom from OrbitControls.
+        const dx = camTrackX - lastCamTrackX;
+        camera.position.x += dx;
+        controls.target.x += dx;
+        lastCamTrackX = camTrackX;
+
+        // Keep target Y/Z centered on the track
+        controls.target.y = 1.2;
+        controls.target.z = 0;
+
+        // Move light with the pack
+        sun.position.x = camTrackX + 10;
+
+        // Grid follows camera for infinite floor illusion
+        gridHelper.position.x = Math.round(camTrackX / 2) * 2;
+        trackGrid.position.x = Math.round(camTrackX / 2) * 2;
+
+        // Speed lines follow camera
+        speedLines.position.x = camTrackX;
+
+      } else if (bulls.length > 0) {
+        // Pre-race: bulls stand still (no animation), camera free to orbit
+        for (const bull of bulls) {
+          bull.group.position.x = bull.racePos;
+        }
+        if (!cameraReady) {
+          camera.position.set(-12, 7, 18);
+          controls.target.set(0, 1.2, 0);
+          cameraReady = true;
+        }
+      }
+
+      // Dust update
+      for (let i = 0; i < dustCount; i++) {
+        const v = dustVel[i];
+        if (v.life > 0) {
+          dustPos[i*3] += v.x * dt;
+          dustPos[i*3+1] += v.y * dt;
+          dustPos[i*3+2] += v.z * dt;
+          v.y -= dt * 0.4;
+          v.life -= dt;
+          if (v.life <= 0) dustPos[i*3+1] = -10;
+        }
+      }
+      dustGeo.attributes.position.needsUpdate = true;
+
+      // Update leaderboard
+      if (bulls.length > 0 && Math.floor(elapsed * 4) !== Math.floor((elapsed - dt) * 4)) updateLeaderboard();
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+  </script>
+</body>
+</html>
