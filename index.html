@@ -113,8 +113,8 @@
     }
     #loading.lfg {
       font-size: 20vw; font-weight: 800; letter-spacing: 0.05em;
-      color: var(--secondary);
-      text-shadow: 0 0 30px rgba(255, 176, 0, 0.8), 0 0 60px rgba(255, 176, 0, 0.4);
+      color: var(--primary);
+      text-shadow: var(--glow-strong);
     }
     #loading.lfg::after { content: ''; }
     @keyframes blink {
@@ -764,31 +764,11 @@
         const walkDuration = 3 + Math.random() * 4;     // 3-7s of walking
         const idleDuration = 3 + Math.random() * 3;     // 3-6s of idle before lying
 
-        // Trail geometry — fading color trace behind each bull
-        const TRAIL_LEN = 120;
-        const trailPositions = new Float32Array(TRAIL_LEN * 3);
-        const trailColors = new Float32Array(TRAIL_LEN * 3);
-        const tc = new THREE.Color(bullColors[i].wire);
-        for (let j = 0; j < TRAIL_LEN; j++) {
-          trailPositions[j * 3 + 1] = -10; // hide below ground initially
-          const t = 1 - j / TRAIL_LEN;
-          trailColors[j * 3] = tc.r * t;
-          trailColors[j * 3 + 1] = tc.g * t;
-          trailColors[j * 3 + 2] = tc.b * t;
-        }
-        const trailGeo = new THREE.BufferGeometry();
-        trailGeo.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
-        trailGeo.setAttribute('color', new THREE.BufferAttribute(trailColors, 3));
-        const trail = new THREE.Line(trailGeo, new THREE.LineBasicMaterial({
-          vertexColors: true, transparent: true, opacity: 0.6
-        }));
-        scene.add(trail);
-
         bulls.push({
           group: laneGroup,
           clone: bullClone,
           mixer,
-          trail, trailGeo, trailPositions, trailLen: TRAIL_LEN,
+
           idleAction,
           runAction,
           walkAction,
@@ -1039,7 +1019,13 @@
                 `> rank: 1/${NUM_BULLS}</div>`;
               wd.style.display = 'block';
             }
-            if (nextRank > NUM_BULLS) { raceOver = true; stopHoofbeats(); }
+            if (nextRank > NUM_BULLS) {
+              raceOver = true; stopHoofbeats();
+              // Auto-switch to free camera so user can explore
+              camMode = 'free';
+              controls.enabled = true;
+              updateCamButtons();
+            }
           }
 
           bull.group.position.x = bull.racePos;
@@ -1063,29 +1049,34 @@
         speedLines.position.x = camTrackX;
 
         // Camera mode positioning
-        controls.enabled = (camMode === 'free');
-        if (camMode === 'free') {
-          const dx = camTrackX - lastCamTrackX;
-          camera.position.x += dx;
-          controls.target.x += dx;
+        if (raceOver) {
+          // Race finished — free camera, no auto-tracking
+          controls.enabled = true;
         } else {
-          const lerpF = 1 - Math.exp(-5 * dt);
-          if (camMode === 'chase') {
-            _camPos.set(leaderX - 15, 5, 8);
-            _camTgt.set(leaderX + 5, 1.2, 0);
-          } else if (camMode === 'top') {
-            _camPos.set(leaderX, 50, 0.01);
-            _camTgt.set(leaderX, 0, 0);
-          } else if (camMode === 'side') {
-            _camPos.set(leaderX, 3, 20);
-            _camTgt.set(leaderX, 1.2, 0);
-          } else if (camMode === 'front') {
-            _camPos.set(leaderX + 15, 3, 0);
-            _camTgt.set(leaderX, 1.2, 0);
+          controls.enabled = (camMode === 'free');
+          if (camMode === 'free') {
+            const dx = camTrackX - lastCamTrackX;
+            camera.position.x += dx;
+            controls.target.x += dx;
+          } else {
+            const lerpF = 1 - Math.exp(-5 * dt);
+            if (camMode === 'chase') {
+              _camPos.set(leaderX - 15, 5, 8);
+              _camTgt.set(leaderX + 5, 1.2, 0);
+            } else if (camMode === 'top') {
+              _camPos.set(leaderX, 50, 0.01);
+              _camTgt.set(leaderX, 0, 0);
+            } else if (camMode === 'side') {
+              _camPos.set(leaderX, 3, 20);
+              _camTgt.set(leaderX, 1.2, 0);
+            } else if (camMode === 'front') {
+              _camPos.set(leaderX + 15, 3, 0);
+              _camTgt.set(leaderX, 1.2, 0);
+            }
+            camera.position.lerp(_camPos, lerpF);
+            controls.target.lerp(_camTgt, lerpF);
+            camera.lookAt(controls.target);
           }
-          camera.position.lerp(_camPos, lerpF);
-          controls.target.lerp(_camTgt, lerpF);
-          camera.lookAt(controls.target);
         }
         lastCamTrackX = camTrackX;
 
@@ -1168,19 +1159,6 @@
       }
       dustGeo.attributes.position.needsUpdate = true;
 
-      // Update bull trails
-      for (const bull of bulls) {
-        const tp = bull.trailPositions;
-        for (let j = bull.trailLen - 1; j > 0; j--) {
-          tp[j * 3]     = tp[(j-1) * 3];
-          tp[j * 3 + 1] = tp[(j-1) * 3 + 1];
-          tp[j * 3 + 2] = tp[(j-1) * 3 + 2];
-        }
-        tp[0] = bull.racePos;
-        tp[1] = 0.15;
-        tp[2] = bull.laneZ;
-        bull.trailGeo.attributes.position.needsUpdate = true;
-      }
 
       // Update leaderboard
       if (bulls.length > 0 && Math.floor(elapsed * 4) !== Math.floor((elapsed - dt) * 4)) updateLeaderboard();
