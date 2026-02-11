@@ -149,7 +149,6 @@
       padding: 16px;
     }
     #winner .name {
-      font-size: 22px; display: block; margin-top: 8px;
       font-weight: 800; letter-spacing: 2px;
     }
     #winner .prompt { color: var(--muted); font-size: 11px; margin-top: 10px; }
@@ -162,6 +161,47 @@
       z-index: 60;
     }
     #countdown.go { color: var(--secondary); text-shadow: 0 0 15px rgba(255,176,0,0.7); }
+
+    /* Camera mode controls */
+    #cam-controls {
+      position: fixed; bottom: 28px; left: 10px;
+      display: flex; gap: 4px; z-index: 50;
+    }
+    #cam-controls button {
+      background: rgba(10, 10, 10, 0.9);
+      border: 1px solid var(--muted);
+      color: var(--muted);
+      font-family: var(--font);
+      font-size: 10px;
+      padding: 3px 8px;
+      cursor: pointer;
+      letter-spacing: 1px;
+      pointer-events: auto;
+    }
+    #cam-controls button:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+    #cam-controls button.active {
+      background: var(--primary);
+      color: var(--bg);
+      border-color: var(--primary);
+      text-shadow: none;
+    }
+
+    /* Winner photo & stats */
+    #winner-photo {
+      border: 1px solid var(--secondary);
+      width: 100%;
+      display: block;
+      margin-bottom: 8px;
+    }
+    #winner .stats {
+      color: var(--secondary);
+      font-size: 11px;
+      line-height: 1.8;
+      white-space: pre;
+    }
   </style>
 </head>
 <body>
@@ -180,7 +220,14 @@
   <div id="stats-bar">
     <span class="active" id="track-info">&gt; TRACK: 500M | 8 BULLS</span>
     <span id="speed-info" class="warn">SPD: --.- M/S</span>
-    <span class="sys">PRESS [ESC] TO ORBIT</span>
+    <span class="sys" id="cam-mode-info">CAM: CHASE</span>
+  </div>
+  <div id="cam-controls">
+    <button data-mode="free">FREE</button>
+    <button data-mode="top">TOP</button>
+    <button data-mode="side">SIDE</button>
+    <button data-mode="front">FRONT</button>
+    <button data-mode="chase" class="active">CHASE</button>
   </div>
   <div id="loading">&gt; initializing_bull_run</div>
   <div id="winner">
@@ -239,6 +286,41 @@
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
     controls.target.set(0, 1.5, 0);
+    controls.maxDistance = 60;
+    controls.minDistance = 2;
+    controls.enabled = false; // start in chase mode
+
+    // Camera mode controls
+    function updateCamButtons() {
+      document.querySelectorAll('#cam-controls button').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.mode === camMode);
+      });
+      const info = document.getElementById('cam-mode-info');
+      if (info) info.textContent = 'CAM: ' + camMode.toUpperCase();
+    }
+    document.querySelectorAll('#cam-controls button').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        camMode = btn.dataset.mode;
+        controls.enabled = (camMode === 'free');
+        updateCamButtons();
+      });
+    });
+    // Mouse interaction on canvas → switch to free mode
+    renderer.domElement.addEventListener('mousedown', () => {
+      if (camMode !== 'free') {
+        camMode = 'free';
+        controls.enabled = true;
+        updateCamButtons();
+      }
+    }, true);
+    renderer.domElement.addEventListener('wheel', () => {
+      if (camMode !== 'free') {
+        camMode = 'free';
+        controls.enabled = true;
+        updateCamButtons();
+      }
+    }, true);
 
     // ======== LIGHTING — minimal, just enough for wireframe glow ========
     scene.add(new THREE.AmbientLight(0x33ff00, 0.8));
@@ -283,7 +365,7 @@
     const markerTopGeo = new THREE.OctahedronGeometry(0.15, 0);
     for (let x = 0; x <= FINISH_X + 20; x += 10) {
       for (let side = -1; side <= 1; side += 2) {
-        const mat = x % 50 === 0 ? markerAmberMat : markerGreenMat;
+        const mat = markerGreenMat;
         const post = new THREE.Mesh(markerPostGeo, mat);
         post.position.set(x, 1.0, side * (trackWidth / 2 + 1.5));
         scene.add(post);
@@ -682,10 +764,31 @@
         const walkDuration = 3 + Math.random() * 4;     // 3-7s of walking
         const idleDuration = 3 + Math.random() * 3;     // 3-6s of idle before lying
 
+        // Trail geometry — fading color trace behind each bull
+        const TRAIL_LEN = 120;
+        const trailPositions = new Float32Array(TRAIL_LEN * 3);
+        const trailColors = new Float32Array(TRAIL_LEN * 3);
+        const tc = new THREE.Color(bullColors[i].wire);
+        for (let j = 0; j < TRAIL_LEN; j++) {
+          trailPositions[j * 3 + 1] = -10; // hide below ground initially
+          const t = 1 - j / TRAIL_LEN;
+          trailColors[j * 3] = tc.r * t;
+          trailColors[j * 3 + 1] = tc.g * t;
+          trailColors[j * 3 + 2] = tc.b * t;
+        }
+        const trailGeo = new THREE.BufferGeometry();
+        trailGeo.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
+        trailGeo.setAttribute('color', new THREE.BufferAttribute(trailColors, 3));
+        const trail = new THREE.Line(trailGeo, new THREE.LineBasicMaterial({
+          vertexColors: true, transparent: true, opacity: 0.6
+        }));
+        scene.add(trail);
+
         bulls.push({
           group: laneGroup,
           clone: bullClone,
           mixer,
+          trail, trailGeo, trailPositions, trailLen: TRAIL_LEN,
           idleAction,
           runAction,
           walkAction,
@@ -822,6 +925,9 @@
     let camTrackX = 0;       // smoothed X that the camera tracks
     let lastCamTrackX = 0;   // previous frame's value for computing delta
     let cameraReady = false;
+    let camMode = 'chase';   // 'free' | 'top' | 'front' | 'chase'
+    const _camPos = new THREE.Vector3();
+    const _camTgt = new THREE.Vector3();
 
     function animate() {
       requestAnimationFrame(animate);
@@ -904,10 +1010,33 @@
             bull.finishTime = elapsed;
             bull.finishRank = nextRank++;
             if (bull.finishRank === 1) {
+              // Capture winner photo from glamour angle
+              let photoURL = '';
+              try {
+                const photoRenderer = new THREE.WebGLRenderer({ antialias: true });
+                photoRenderer.setSize(400, 300);
+                photoRenderer.setPixelRatio(1);
+                const photoCam = new THREE.PerspectiveCamera(40, 400 / 300, 0.1, 200);
+                const bx = bull.racePos;
+                const bz = bull.laneZ;
+                photoCam.position.set(bx + 4, 2.5, bz + 5);
+                photoCam.lookAt(bx, 1.2, bz);
+                photoRenderer.render(scene, photoCam);
+                photoURL = photoRenderer.domElement.toDataURL('image/png');
+                photoRenderer.dispose();
+              } catch(e) { console.warn('Winner photo failed:', e); }
+
+              const finTime = elapsed - raceStartTime;
+              const avgSpeed = (FINISH_X / finTime).toFixed(1);
               const wd = document.getElementById('winner');
+              const photoHtml = photoURL ? `<img id="winner-photo" src="${photoURL}" alt="${bull.name}">` : '';
               document.getElementById('winner-body').innerHTML =
-                `> race_complete --status OK\n` +
-                `> winner: <span class="name" style="color:${bull.color}">${bull.name}</span>`;
+                photoHtml +
+                `<div class="stats">` +
+                `> winner: <span class="name" style="color:${bull.color}">${bull.name}</span>\n` +
+                `> time: ${formatTime(finTime)}\n` +
+                `> avg_speed: ${avgSpeed} M/S\n` +
+                `> rank: 1/${NUM_BULLS}</div>`;
               wd.style.display = 'block';
             }
             if (nextRank > NUM_BULLS) { raceOver = true; stopHoofbeats(); }
@@ -920,36 +1049,45 @@
           emitDust(bull.racePos - 1, 0, bull.laneZ, currentSpeed);
         }
 
-        // ---- CAMERA FOLLOW ----
-        // Compute where the camera should track (middle of the pack)
+        // ---- CAMERA & SCENE TRACKING ----
         const sorted = [...bulls].sort((a, b) => b.racePos - a.racePos);
-        const leader = sorted[0].racePos;
+        const leaderX = sorted[0].racePos;
         const middle = sorted[Math.floor(NUM_BULLS / 2)].racePos;
-        const goalX = leader * 0.4 + middle * 0.6;
-        // Camera follows with lag — bulls run ahead, camera catches up
+        const goalX = leaderX * 0.4 + middle * 0.6;
         camTrackX += (goalX - camTrackX) * 1.5 * dt;
 
-        // Translate BOTH camera and target by the same delta.
-        // This slides the entire view along the track while preserving
-        // the user's orbit angle/zoom from OrbitControls.
-        const dx = camTrackX - lastCamTrackX;
-        camera.position.x += dx;
-        controls.target.x += dx;
-        lastCamTrackX = camTrackX;
-
-        // Keep target Y/Z centered on the track
-        controls.target.y = 1.2;
-        controls.target.z = 0;
-
-        // Move light with the pack
+        // Move light, grid, speed lines with pack (all modes)
         sun.position.x = camTrackX + 10;
-
-        // Grid follows camera for infinite floor illusion
         gridHelper.position.x = Math.round(camTrackX / 2) * 2;
         trackGrid.position.x = Math.round(camTrackX / 2) * 2;
-
-        // Speed lines follow camera
         speedLines.position.x = camTrackX;
+
+        // Camera mode positioning
+        controls.enabled = (camMode === 'free');
+        if (camMode === 'free') {
+          const dx = camTrackX - lastCamTrackX;
+          camera.position.x += dx;
+          controls.target.x += dx;
+        } else {
+          const lerpF = 1 - Math.exp(-5 * dt);
+          if (camMode === 'chase') {
+            _camPos.set(leaderX - 15, 5, 8);
+            _camTgt.set(leaderX + 5, 1.2, 0);
+          } else if (camMode === 'top') {
+            _camPos.set(leaderX, 50, 0.01);
+            _camTgt.set(leaderX, 0, 0);
+          } else if (camMode === 'side') {
+            _camPos.set(leaderX, 3, 20);
+            _camTgt.set(leaderX, 1.2, 0);
+          } else if (camMode === 'front') {
+            _camPos.set(leaderX + 15, 3, 0);
+            _camTgt.set(leaderX, 1.2, 0);
+          }
+          camera.position.lerp(_camPos, lerpF);
+          controls.target.lerp(_camTgt, lerpF);
+          camera.lookAt(controls.target);
+        }
+        lastCamTrackX = camTrackX;
 
       } else if (bulls.length > 0) {
         // Pre-race: bulls walk up to the start line
@@ -980,10 +1118,39 @@
           startCountdown();
         }
 
-        if (!cameraReady) {
-          camera.position.set(-12, 7, 18);
-          controls.target.set(0, 1.2, 0);
-          cameraReady = true;
+        // Pre-race camera
+        controls.enabled = (camMode === 'free');
+        {
+          const maxBullX = Math.max(...bulls.map(b => b.racePos));
+          if (camMode === 'chase') {
+            _camPos.set(maxBullX - 15, 5, 8);
+            _camTgt.set(maxBullX + 5, 1.2, 0);
+          } else if (camMode === 'top') {
+            _camPos.set(maxBullX, 50, 0.01);
+            _camTgt.set(maxBullX, 0, 0);
+          } else if (camMode === 'side') {
+            _camPos.set(maxBullX, 3, 20);
+            _camTgt.set(maxBullX, 1.2, 0);
+          } else if (camMode === 'front') {
+            _camPos.set(maxBullX + 15, 3, 0);
+            _camTgt.set(maxBullX, 1.2, 0);
+          }
+          if (camMode !== 'free') {
+            if (!cameraReady) {
+              camera.position.copy(_camPos);
+              controls.target.copy(_camTgt);
+              cameraReady = true;
+            } else {
+              const lerpF = 1 - Math.exp(-5 * dt);
+              camera.position.lerp(_camPos, lerpF);
+              controls.target.lerp(_camTgt, lerpF);
+            }
+            camera.lookAt(controls.target);
+          } else if (!cameraReady) {
+            camera.position.set(-12, 5, 8);
+            controls.target.set(0, 1.2, 0);
+            cameraReady = true;
+          }
         }
       }
 
@@ -1001,10 +1168,24 @@
       }
       dustGeo.attributes.position.needsUpdate = true;
 
+      // Update bull trails
+      for (const bull of bulls) {
+        const tp = bull.trailPositions;
+        for (let j = bull.trailLen - 1; j > 0; j--) {
+          tp[j * 3]     = tp[(j-1) * 3];
+          tp[j * 3 + 1] = tp[(j-1) * 3 + 1];
+          tp[j * 3 + 2] = tp[(j-1) * 3 + 2];
+        }
+        tp[0] = bull.racePos;
+        tp[1] = 0.15;
+        tp[2] = bull.laneZ;
+        bull.trailGeo.attributes.position.needsUpdate = true;
+      }
+
       // Update leaderboard
       if (bulls.length > 0 && Math.floor(elapsed * 4) !== Math.floor((elapsed - dt) * 4)) updateLeaderboard();
 
-      controls.update();
+      if (camMode === 'free') controls.update();
       renderer.render(scene, camera);
     }
     animate();
