@@ -306,8 +306,9 @@
         updateCamButtons();
       });
     });
-    // Mouse interaction on canvas → switch to free mode
-    renderer.domElement.addEventListener('mousedown', () => {
+    // Pointer interaction on canvas → switch to free mode
+    // Must use pointerdown (not mousedown) because OrbitControls listens on pointerdown
+    renderer.domElement.addEventListener('pointerdown', () => {
       if (camMode !== 'free') {
         camMode = 'free';
         controls.enabled = true;
@@ -321,6 +322,22 @@
         updateCamButtons();
       }
     }, true);
+
+    // WASD / Arrow key camera movement
+    const keysPressed = new Set();
+    const moveKeys = ['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'];
+    addEventListener('keydown', (e) => {
+      const key = e.key.toLowerCase();
+      if (moveKeys.includes(key)) {
+        keysPressed.add(key);
+        if (camMode !== 'free') {
+          camMode = 'free';
+          controls.enabled = true;
+          updateCamButtons();
+        }
+      }
+    });
+    addEventListener('keyup', (e) => keysPressed.delete(e.key.toLowerCase()));
 
     // ======== LIGHTING — minimal, just enough for wireframe glow ========
     scene.add(new THREE.AmbientLight(0x33ff00, 0.8));
@@ -1162,6 +1179,22 @@
 
       // Update leaderboard
       if (bulls.length > 0 && Math.floor(elapsed * 4) !== Math.floor((elapsed - dt) * 4)) updateLeaderboard();
+
+      // WASD / Arrow key movement
+      if (keysPressed.size > 0) {
+        const spd = 25 * dt;
+        const fwd = new THREE.Vector3();
+        camera.getWorldDirection(fwd);
+        fwd.y = 0; fwd.normalize();
+        const right = new THREE.Vector3().crossVectors(fwd, camera.up).normalize();
+        const move = new THREE.Vector3();
+        if (keysPressed.has('w') || keysPressed.has('arrowup')) move.addScaledVector(fwd, spd);
+        if (keysPressed.has('s') || keysPressed.has('arrowdown')) move.addScaledVector(fwd, -spd);
+        if (keysPressed.has('a') || keysPressed.has('arrowleft')) move.addScaledVector(right, -spd);
+        if (keysPressed.has('d') || keysPressed.has('arrowright')) move.addScaledVector(right, spd);
+        camera.position.add(move);
+        controls.target.add(move);
+      }
 
       if (camMode === 'free') controls.update();
       renderer.render(scene, camera);
