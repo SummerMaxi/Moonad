@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>FBX → GLB Converter</title>
+  <style>
+    body {
+      background: #0a0a0a;
+      color: #33ff00;
+      font-family: 'Courier New', monospace;
+      padding: 40px;
+    }
+    #log {
+      white-space: pre-wrap;
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+  <div id="log">> FBX → GLB converter
+> Loading Bull.fbx...
+</div>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+    import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+
+    const log = document.getElementById('log');
+    function print(msg) {
+      log.textContent += msg + '\n';
+      console.log(msg);
+    }
+
+    const KEEP_CLIPS = [
+      'Run_F_RM',
+      'Idle_1',
+      'Trot_F_RM',
+      'Walk_F_RM',
+      'Lie_start',
+      'Lie_loop1',
+      'Attack_Run_RM',
+    ];
+
+    const loader = new FBXLoader();
+    loader.load('bull-animations-v02/source/Bull.fbx', (fbx) => {
+      print(`> Loaded FBX: ${fbx.animations.length} animations`);
+
+      // List all animations
+      fbx.animations.forEach((c, i) => {
+        const keep = KEEP_CLIPS.some(name => c.name.includes(name));
+        print(`  [${i}] ${c.name} (${c.duration.toFixed(2)}s) ${keep ? '← KEEPING' : ''}`);
+      });
+
+      // Also keep all Idle variants (Idle_1 through Idle_6)
+      const filtered = fbx.animations.filter(c => {
+        if (KEEP_CLIPS.some(name => c.name.includes(name))) return true;
+        if (/Idle_\d/.test(c.name)) return true;
+        return false;
+      });
+
+      print(`\n> Filtered to ${filtered.length} clips:`);
+      filtered.forEach(c => print(`  - ${c.name}`));
+
+      // Replace animations on the FBX object
+      fbx.animations = filtered;
+
+      print('\n> Exporting to GLB...');
+
+      const exporter = new GLTFExporter();
+      exporter.parse(fbx, (glb) => {
+        const blob = new Blob([glb], { type: 'application/octet-stream' });
+        const size = (blob.size / 1024 / 1024).toFixed(2);
+        print(`> GLB size: ${size} MB`);
+        print('> Downloading bull.glb...');
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'bull.glb';
+        a.click();
+        URL.revokeObjectURL(url);
+
+        print('> Done! Move bull.glb to your project folder.');
+      }, (error) => {
+        print(`> ERROR exporting: ${error.message}`);
+        console.error(error);
+      }, {
+        binary: true,
+        animations: filtered,
+      });
+    }, (progress) => {
+      if (progress.total > 0) {
+        const pct = Math.round(progress.loaded / progress.total * 100);
+        log.textContent = log.textContent.replace(/Loading Bull\.fbx.*/, `Loading Bull.fbx... ${pct}%`);
+      }
+    }, (error) => {
+      print(`> ERROR loading FBX: ${error.message}`);
+      console.error(error);
+    });
+  </script>
+</body>
+</html>

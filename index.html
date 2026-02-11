@@ -246,7 +246,7 @@
   <script type="module">
     import * as THREE from 'three';
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-    import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
     import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 
     const NUM_BULLS = 8;
@@ -604,43 +604,45 @@
       return clip;
     }
 
-    const loader = new FBXLoader();
-    loader.load('bull-animations-v02/source/Bull.fbx', (fbx) => {
+    const loader = new GLTFLoader();
+    loader.load('bull.glb', (gltf) => {
+      const fbx = gltf.scene;
+      const animations = gltf.animations;
       const loadEl = document.getElementById('loading');
       loadEl.textContent = 'LFG!!!!';
       loadEl.classList.add('lfg');
       setTimeout(() => { loadEl.style.display = 'none'; }, 1500);
 
       // Log available animations
-      console.log(`Animations found: ${fbx.animations.length}`);
-      fbx.animations.forEach((c, i) => console.log(`  [${i}] ${c.name} (${c.duration.toFixed(2)}s)`));
+      console.log(`Animations found: ${animations.length}`);
+      animations.forEach((c, i) => console.log(`  [${i}] ${c.name} (${c.duration.toFixed(2)}s)`));
 
       // Find key animation clips
       const runClip = stripRootMotion(
-        fbx.animations.find(c => c.name.includes('Run_F_RM')) || fbx.animations[0]
+        animations.find(c => c.name.includes('Run_F_RM')) || animations[0]
       );
       const idleClip = stripRootMotion(
-        fbx.animations.find(c => c.name.includes('Idle_1')) || fbx.animations[0]
+        animations.find(c => c.name.includes('Idle_1')) || animations[0]
       );
       const trotClip = stripRootMotion(
-        fbx.animations.find(c => c.name.includes('Trot_F_RM')) || runClip
+        animations.find(c => c.name.includes('Trot_F_RM')) || runClip
       );
       const walkClip = stripRootMotion(
-        fbx.animations.find(c => c.name.includes('Walk_F_RM')) ||
-        fbx.animations.find(c => c.name.includes('Walk')) || trotClip
+        animations.find(c => c.name.includes('Walk_F_RM')) ||
+        animations.find(c => c.name.includes('Walk')) || trotClip
       );
       const lieStartClip = stripRootMotion(
-        fbx.animations.find(c => c.name.includes('Lie_start')) || idleClip
+        animations.find(c => c.name.includes('Lie_start')) || idleClip
       );
       const lieLoopClip = stripRootMotion(
-        fbx.animations.find(c => c.name.includes('Lie_loop1')) ||
-        fbx.animations.find(c => c.name.includes('Lie_loop')) || idleClip
+        animations.find(c => c.name.includes('Lie_loop1')) ||
+        animations.find(c => c.name.includes('Lie_loop')) || idleClip
       );
       const attackRunClip = stripRootMotion(
-        fbx.animations.find(c => c.name.includes('Attack_Run_RM')) || runClip
+        animations.find(c => c.name.includes('Attack_Run_RM')) || runClip
       );
       // Collect all idle variants for random assignment
-      const idleClips = fbx.animations
+      const idleClips = animations
         .filter(c => /Idle_\d/.test(c.name))
         .map(c => stripRootMotion(c));
       if (idleClips.length === 0) idleClips.push(idleClip);
@@ -706,7 +708,7 @@
         const laneGroup = new THREE.Group();
         laneGroup.position.z = laneZ;
 
-        // Clone the entire FBX (preserves skeleton + skinning)
+        // Clone the entire model (preserves skeleton + skinning)
         const bullClone = SkeletonUtils.clone(fbx);
         bullClone.scale.setScalar(scale);
         bullClone.rotation.y = bestRotY;
@@ -969,19 +971,11 @@
               bull.racePos += moveSpeed * dt;
               bull.walkAction.timeScale = moveSpeed / 1.5;
             }
-            // ---- Phase 3: Random idle animation ----
-            else if (t < bull.postIdleEnd) {
-              if (!bull.isIdling) {
-                bull.isIdling = true;
-                bull.walkAction.fadeOut(0.8);
-                bull.restIdleAction.reset().fadeIn(0.8).play();
-              }
-            }
-            // ---- Phase 4: Lie down ----
-            else if (!bull.isLying) {
-              bull.isLying = true;
-              bull.restIdleAction.fadeOut(1.0);
-              bull.lieStartAction.reset().fadeIn(1.0).play();
+            // ---- Phase 3: Stand idle ----
+            else if (!bull.isIdling) {
+              bull.isIdling = true;
+              bull.walkAction.fadeOut(1.0);
+              bull.idleAction.reset().fadeIn(1.0).play();
             }
 
             bull.group.position.x = bull.racePos;
