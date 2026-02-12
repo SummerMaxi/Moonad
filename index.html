@@ -48,8 +48,8 @@
       font-size: 11px; color: var(--primary);
       text-shadow: var(--glow);
     }
-    #title-bar .sys { color: var(--muted); }
     #title-bar .title-text { letter-spacing: 2px; font-weight: 700; }
+    #title-bar-center { display: flex; align-items: center; gap: 8px; }
     #phase-indicator {
       padding: 2px 8px; font-weight: 700; font-size: 10px; letter-spacing: 1px;
       color: var(--bg);
@@ -719,11 +719,12 @@
 
   <div id="hud">
     <div id="title-bar">
-      <span class="sys">[SYS]</span>
       <span class="title-text">&gt; MOONAD // BULL RACE</span>
-      <span id="phase-indicator"></span>
+      <span id="title-bar-center">
+        <span id="phase-indicator"></span>
+        <span id="clock-display">&gt; loading...</span>
+      </span>
       <span id="pool-display">POOL: 0.00 MON</span>
-      <span id="clock-display">00:00</span>
     </div>
     <div id="leaderboard">
       <div id="lb-header">+-- LEADERBOARD --+</div>
