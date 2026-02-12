@@ -1845,8 +1845,8 @@
     window.connectWallet = async function() {
       SFX.click();
       if (RM.walletConnected) {
-        await appKitModal.disconnect();
-        teardownWallet();
+        // Open account view — user can disconnect from there
+        appKitModal.open({ view: 'Account' });
       } else {
         // Clear any stale cached session before showing wallet selection
         try { await appKitModal.disconnect(); } catch(e) {}
