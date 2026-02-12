@@ -1967,27 +1967,32 @@
     };
 
     function showWarnings() {
-      if (!RM.myBet || RM.trackType < 0) return;
-      const stats = RM.bullStats[RM.myBet.bullIndex];
-      const mults = TRACK_MULTIPLIERS[RM.trackType];
-      const trackName = TRACK_TYPES[RM.trackType].name;
-      const warnings = [];
-
-      if (mults[5] < -3 && stats[5] >= 7) warnings.push(`HIGH TEMPER (${stats[5]}) ON ${trackName}`);
-      if (mults[0] < -2 && stats[0] >= 7) warnings.push(`SPEED (${stats[0]}) PENALIZED ON ${trackName}`);
-      if (mults[1] >= 8 && stats[1] <= 3) warnings.push(`LOW STAMINA (${stats[1]}) ON ENDURANCE`);
-      if (mults[3] < -2 && stats[3] >= 7) warnings.push(`STRENGTH (${stats[3]}) PENALIZED`);
+      if (!RM.myBet) return;
 
       const panel = document.getElementById('your-bet-body');
       const bc = bullColors[RM.myBet.bullIndex];
       let html = `<div style="margin-bottom:4px">Bull: <span style="color:${bc.dot};font-weight:700">${bc.name}</span></div>`;
       html += `<div>Amount: <span style="color:var(--secondary)">${RM.myBet.amount.toFixed(2)} MON</span></div>`;
-      if (RM.trackType >= 0) {
+
+      // Only show track info after the reveal phase
+      const trackRevealed = RM.phase === 'switching' || RM.phase === 'racing' || RM.phase === 'results';
+      if (trackRevealed && RM.trackType >= 0) {
+        const trackName = TRACK_TYPES[RM.trackType].name;
         html += `<div style="margin-top:4px">Track: ${trackName}</div>`;
+
+        // Track-based warnings only after reveal
+        const stats = RM.bullStats[RM.myBet.bullIndex];
+        const mults = TRACK_MULTIPLIERS[RM.trackType];
+        const warnings = [];
+        if (mults[5] < -3 && stats[5] >= 7) warnings.push(`HIGH TEMPER (${stats[5]}) ON ${trackName}`);
+        if (mults[0] < -2 && stats[0] >= 7) warnings.push(`SPEED (${stats[0]}) PENALIZED ON ${trackName}`);
+        if (mults[1] >= 8 && stats[1] <= 3) warnings.push(`LOW STAMINA (${stats[1]}) ON ENDURANCE`);
+        if (mults[3] < -2 && stats[3] >= 7) warnings.push(`STRENGTH (${stats[3]}) PENALIZED`);
+        if (warnings.length > 0) {
+          html += warnings.map(w => `<div class="yb-warning">${w}</div>`).join('');
+        }
       }
-      if (warnings.length > 0) {
-        html += warnings.map(w => `<div class="yb-warning">${w}</div>`).join('');
-      }
+
       if (RM.phase === 'switching') {
         html += `<button class="switch-btn" onclick="openSwitchMode()">[ SWITCH BET ] (5% FEE)</button>`;
         html += `<div style="color:var(--muted);font-size:8px;margin-top:2px">You keep: ${(RM.myBet.amount * 0.95).toFixed(2)} MON</div>`;
