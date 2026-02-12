@@ -50,6 +50,16 @@
     }
     #title-bar .sys { color: var(--muted); }
     #title-bar .title-text { letter-spacing: 2px; font-weight: 700; }
+    #phase-indicator {
+      padding: 2px 8px; font-weight: 700; font-size: 10px; letter-spacing: 1px;
+      color: var(--bg);
+    }
+    #phase-indicator.betting { background: var(--primary); }
+    #phase-indicator.switching { background: var(--secondary); }
+    #phase-indicator.racing { background: var(--error); }
+    #phase-indicator.closed { background: var(--muted); color: #ccc; }
+    #phase-indicator.waiting { background: var(--muted); color: #ccc; }
+    #clock-display { color: var(--primary); font-weight: 700; font-size: 12px; letter-spacing: 1px; text-shadow: var(--glow); }
     #pool-display { color: var(--secondary); font-weight: 700; }
 
     /* Leaderboard */
@@ -168,40 +178,6 @@
     }
     #wallet-btn:hover { background: var(--primary); color: var(--bg); text-shadow: none; }
     #wallet-btn.connected { border-color: var(--muted); color: var(--muted); }
-
-    /* Demo/Live toggle */
-    #mode-toggle {
-      position: fixed; top: 6px; left: 12px;
-      display: flex; align-items: center; gap: 8px;
-      z-index: 55; pointer-events: auto;
-      font-family: var(--font); font-size: 10px;
-      letter-spacing: 1px;
-    }
-    #mode-toggle .mode-label {
-      color: var(--muted); cursor: default;
-      transition: color 0.2s, text-shadow 0.2s;
-    }
-    #mode-toggle .mode-label.active {
-      color: var(--primary); text-shadow: var(--glow);
-    }
-    #mode-toggle .toggle-track {
-      width: 36px; height: 16px;
-      border: 1px solid var(--muted);
-      background: rgba(10, 10, 10, 0.9);
-      cursor: pointer; position: relative;
-      transition: border-color 0.2s;
-    }
-    #mode-toggle .toggle-track:hover { border-color: var(--primary); }
-    #mode-toggle .toggle-knob {
-      position: absolute; top: 2px; left: 2px;
-      width: 10px; height: 10px;
-      background: var(--primary);
-      box-shadow: var(--glow);
-      transition: left 0.2s;
-    }
-    #mode-toggle .toggle-track.live .toggle-knob { left: 22px; }
-    #mode-toggle .toggle-track.live { border-color: var(--secondary); }
-    #mode-toggle .mode-label.live-active { color: var(--secondary); text-shadow: 0 0 5px rgba(255, 176, 0, 0.5); }
 
     /* ======== NEW: Bull Stat Cards (bottom panel) ======== */
     #bull-cards {
@@ -731,21 +707,14 @@
     <div id="title-bar">
       <span class="sys">[SYS]</span>
       <span class="title-text">&gt; MOONAD // BULL RACE</span>
+      <span id="phase-indicator"></span>
       <span id="pool-display">POOL: 0.00 MON</span>
-      <span class="sys" id="clock-display">00:00.0</span>
+      <span id="clock-display">00:00</span>
     </div>
     <div id="leaderboard">
       <div id="lb-header">+-- LEADERBOARD --+</div>
       <div id="lb-body"></div>
     </div>
-  </div>
-
-  <div id="mode-toggle">
-    <span class="mode-label active" id="mode-demo-label">DEMO</span>
-    <div class="toggle-track" id="mode-toggle-track" onclick="toggleMode()">
-      <div class="toggle-knob"></div>
-    </div>
-    <span class="mode-label" id="mode-live-label">LIVE</span>
   </div>
 
   <div id="claim-banner" onclick="claimWinnings()"></div>
@@ -860,10 +829,6 @@
     import { createAppKit, WagmiAdapter } from '@reown/appkit-cdn';
 
     // ======== CONFIGURATION ========
-    let DEMO_MODE = true;
-    const DEMO_TIMING = { waiting: 6, betting: 35, revealing: 3, switching: 25, results: 18 };
-    const LIVE_TIMING = { waiting: 300, betting: 300, revealing: 3, switching: 180, results: 105 };
-    let PHASE_TIMING = DEMO_TIMING;
 
     // ======== LIVE MODE SYNC (UTC-based timing from contract) ========
     let liveEpoch = 1770854400;
@@ -954,7 +919,8 @@
     // Web3 state
     let provider = null;
     let signer = null;
-    let contract = null;       // read-only (provider)
+    const readProvider = new ethers.JsonRpcProvider(ALCHEMY_RPC);
+    const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, readProvider);
     let contractWrite = null;  // write (signer)
     let userAddress = null;
 
@@ -1034,21 +1000,21 @@
         provider = new ethers.BrowserProvider(appKitEip155Provider, 143);
         signer = await provider.getSigner();
         userAddress = await signer.getAddress();
-        contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
         contractWrite = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
 
         const bal = await provider.getBalance(userAddress);
-        RM.mockBalance = parseFloat(ethers.formatEther(bal));
+        RM.walletBalance = parseFloat(ethers.formatEther(bal));
         RM.walletConnected = true;
 
         const btn = document.getElementById('wallet-btn');
         const short = userAddress.slice(0, 6) + '...' + userAddress.slice(-4);
-        btn.textContent = `${short} | ${RM.mockBalance.toFixed(1)} MON`;
+        btn.textContent = `${short} | ${RM.walletBalance.toFixed(1)} MON`;
         btn.classList.add('connected');
 
         SFX.walletConnect();
         updateBalanceDisplay();
         updateClaimBanner();
+        syncToLivePhase();
         console.log('[AppKit] Wallet connected:', userAddress);
       } catch (err) {
         console.error('[AppKit] setupEthersFromAppKit failed:', err);
@@ -1062,7 +1028,6 @@
       userAddress = null;
       signer = null;
       provider = null;
-      contract = null;
       contractWrite = null;
       appKitEip155Provider = null;
 
@@ -1113,11 +1078,10 @@
       trackType: -1,
       scores: [],
       finishOrder: [],
-      // Betting state (local mock)
+      // Betting state
       myBet: null,         // { bullIndex, amount }
-      mockBets: {},        // bullIndex → total MON
-      mockBalance: 50.0,   // starting balance
-      mockWinnings: 0,
+      bullPools: {},       // bullIndex → total MON (on-chain pool data)
+      walletBalance: 0,
       walletConnected: false,
       switchMode: false,   // true when user is picking a new bull to switch to
     };
@@ -1493,26 +1457,8 @@
     // ======== GENERATE RACE DATA ========
     function generateRaceData() {
       RM.myBet = null;
-      RM.mockBets = {};
-
-      if (!DEMO_MODE && contract) {
-        // LIVE mode: fetch on-chain data
-        loadLiveRaceData();
-        return;
-      }
-
-      // DEMO mode: generate locally
-      RM.bullStats = [];
-      for (let i = 0; i < NUM_BULLS; i++) {
-        const stats = [];
-        for (let s = 0; s < 6; s++) stats.push(Math.floor(Math.random() * 10) + 1);
-        RM.bullStats.push(stats);
-      }
-      RM.trackType = Math.floor(Math.random() * 10);
-      // Simulate some random bets from "other players"
-      for (let i = 0; i < NUM_BULLS; i++) {
-        RM.mockBets[i] = Math.random() < 0.6 ? +(Math.random() * 20 + 1).toFixed(2) : 0;
-      }
+      RM.bullPools = {};
+      loadLiveRaceData();
     }
 
     async function loadLiveRaceData() {
@@ -1539,9 +1485,9 @@
         }
         // Load on-chain pool data
         const pools = await contract.getAllBullPools(raceId);
-        RM.mockBets = {};
+        RM.bullPools = {};
         for (let i = 0; i < NUM_BULLS; i++) {
-          RM.mockBets[i] = Number(ethers.formatEther(pools[i]));
+          RM.bullPools[i] = Number(ethers.formatEther(pools[i]));
         }
         liveRaceDataLoaded = true;
       } catch (e) {
@@ -1585,7 +1531,7 @@
 
     /** Load contract timing config once */
     async function loadLiveConfig() {
-      if (!contract || liveConfigLoaded) return;
+      if (liveConfigLoaded) return;
       try {
         const [ep, cycle, betting, switching] = await Promise.all([
           contract.epoch(),
@@ -1606,7 +1552,6 @@
 
     /** Sync frontend to correct on-chain phase (called when entering LIVE mode) */
     async function syncToLivePhase() {
-      if (DEMO_MODE || !contract) return;
 
       await loadLiveConfig();
       const live = getLiveState();
@@ -1617,7 +1562,7 @@
 
       // Load on-chain data for this race
       RM.myBet = null;
-      RM.mockBets = {};
+      RM.bullPools = {};
       await loadLiveRaceData();
       liveRaceDataLoaded = true;
 
@@ -1670,14 +1615,13 @@
     function startLivePolling() {
       stopLivePolling();
       livePollInterval = setInterval(async () => {
-        if (DEMO_MODE || !contract) { stopLivePolling(); return; }
         try {
           const live = getLiveState();
           if (live.raceId !== RM.liveRaceId) return; // Race changed, phase transition handles it
           const pools = await contract.getAllBullPools(live.raceId);
-          RM.mockBets = {};
+          RM.bullPools = {};
           for (let i = 0; i < NUM_BULLS; i++) {
-            RM.mockBets[i] = Number(ethers.formatEther(pools[i]));
+            RM.bullPools[i] = Number(ethers.formatEther(pools[i]));
           }
           if (userAddress) {
             const bet = await contract.getUserBet(live.raceId, userAddress);
@@ -1941,9 +1885,7 @@
     }
 
     function getTotalPoolForBull(idx) {
-      let total = RM.mockBets[idx] || 0;
-      if (RM.myBet && RM.myBet.bullIndex === idx) total += RM.myBet.amount;
-      return total;
+      return RM.bullPools[idx] || 0;
     }
 
     function getTotalPool() {
@@ -1983,12 +1925,9 @@
           const myPool = getTotalPoolForBull(RM.myBet.bullIndex);
           const payout = (getTotalPool() * 0.9) * (RM.myBet.amount / myPool);
           const profit = payout - RM.myBet.amount;
-          RM.mockWinnings = payout;
-          RM.mockBalance += payout;
           html += `<div class="your-result won">> YOU WON! +${profit.toFixed(2)} MON (${payout.toFixed(2)} total)</div>`;
           html += `<button class="claim-btn" onclick="claimWinnings()">[ CLAIM ${payout.toFixed(2)} MON ]</button>`;
         } else {
-          RM.mockBalance -= RM.myBet.amount;
           html += `<div class="your-result lost">> LOST: -${RM.myBet.amount.toFixed(2)} MON (your bull: #${myRank + 1})</div>`;
         }
       } else {
@@ -2028,25 +1967,43 @@
       if (window._modalCountdown) { clearInterval(window._modalCountdown); window._modalCountdown = null; }
     };
 
-    window.confirmBet = function() {
+    window.confirmBet = async function() {
       const amount = parseFloat(document.getElementById('bet-amount').value);
       if (!amount || amount < 0.01 || amount > 100) { SFX.error(); alert('Invalid amount (0.01 - 100 MON)'); return; }
-      if (amount > RM.mockBalance) { SFX.error(); alert('Insufficient balance'); return; }
-      SFX.confirm();
-      RM.myBet = { bullIndex: window._betModalBull, amount };
-      closeBetModal();
-      renderBullCards();
-      // Refresh betting panel if open
-      if (document.getElementById('betting-panel').classList.contains('visible')) {
-        renderBettingPanel();
-      }
-      updatePoolDisplay();
-      updateBalanceDisplay();
-      document.getElementById('your-bet-panel').classList.add('visible');
-      showWarnings();
-      // Update trigger button text during switching phase
-      if (RM.phase === 'switching') {
-        document.getElementById('bet-trigger-btn').textContent = '[ REVIEW / SWITCH ]';
+      if (!contractWrite) { SFX.error(); alert('Wallet not connected'); return; }
+      try {
+        const amountWei = ethers.parseEther(amount.toString());
+        const tx = await contractWrite.placeBet(
+          RM.raceId,
+          window._betModalBull,
+          '0x0000000000000000000000000000000000000000',
+          amountWei,
+          { value: amountWei }
+        );
+        SFX.confirm();
+        closeBetModal();
+        await tx.wait();
+        RM.myBet = { bullIndex: window._betModalBull, amount };
+        renderBullCards();
+        if (document.getElementById('betting-panel').classList.contains('visible')) {
+          renderBettingPanel();
+        }
+        updatePoolDisplay();
+        // Refresh balance
+        if (provider && userAddress) {
+          const bal = await provider.getBalance(userAddress);
+          RM.walletBalance = parseFloat(ethers.formatEther(bal));
+        }
+        updateBalanceDisplay();
+        document.getElementById('your-bet-panel').classList.add('visible');
+        showWarnings();
+        if (RM.phase === 'switching') {
+          document.getElementById('bet-trigger-btn').textContent = '[ REVIEW / SWITCH ]';
+        }
+      } catch (err) {
+        SFX.error();
+        console.error('Bet failed:', err);
+        alert('Bet failed: ' + (err.reason || err.message || 'unknown error'));
       }
     };
 
@@ -2076,21 +2033,32 @@
       showWarnings();
     };
 
-    window.confirmSwitch = function(newBullIndex) {
+    window.confirmSwitch = async function(newBullIndex) {
       if (!RM.myBet || !RM.switchMode) return;
       if (newBullIndex === RM.myBet.bullIndex) { SFX.error(); return; }
-      SFX.confirm();
-      const oldAmount = RM.myBet.amount;
-      const fee = oldAmount * 0.05;
-      const remaining = oldAmount - fee;
-      RM.myBet = { bullIndex: newBullIndex, amount: remaining };
-      RM.mockBalance -= fee;
-      RM.switchMode = false;
-      closeBettingPanel();
-      renderBullCards();
-      updatePoolDisplay();
-      updateBalanceDisplay();
-      showWarnings();
+      if (!contractWrite) { SFX.error(); alert('Wallet not connected'); return; }
+      try {
+        const tx = await contractWrite.switchBet(RM.raceId, newBullIndex);
+        SFX.confirm();
+        closeBettingPanel();
+        await tx.wait();
+        const oldAmount = RM.myBet.amount;
+        const remaining = oldAmount * 0.95;
+        RM.myBet = { bullIndex: newBullIndex, amount: remaining };
+        RM.switchMode = false;
+        renderBullCards();
+        updatePoolDisplay();
+        if (provider && userAddress) {
+          const bal = await provider.getBalance(userAddress);
+          RM.walletBalance = parseFloat(ethers.formatEther(bal));
+        }
+        updateBalanceDisplay();
+        showWarnings();
+      } catch (err) {
+        SFX.error();
+        console.error('Switch failed:', err);
+        alert('Switch failed: ' + (err.reason || err.message || 'unknown error'));
+      }
     };
 
     window.connectWallet = async function() {
@@ -2105,65 +2073,25 @@
       }
     };
 
-    window.toggleMode = function() {
-      const track = document.getElementById('mode-toggle-track');
-      const demoLabel = document.getElementById('mode-demo-label');
-      const liveLabel = document.getElementById('mode-live-label');
-      const walletBtn = document.getElementById('wallet-btn');
-
-      if (DEMO_MODE) {
-        // Switch to LIVE
-        if (!RM.walletConnected) {
-          SFX.error();
-          // Flash wallet button to hint they need to connect
-          walletBtn.style.background = 'var(--error)';
-          walletBtn.style.color = '#fff';
-          setTimeout(() => { walletBtn.style.background = ''; walletBtn.style.color = ''; }, 600);
-          return;
+    window.claimWinnings = async function() {
+      if (!contractWrite || !RM.myBet) return;
+      try {
+        const tx = await contractWrite.claimWinnings(RM.raceId);
+        SFX.chaChing();
+        await tx.wait();
+        if (provider && userAddress) {
+          const bal = await provider.getBalance(userAddress);
+          RM.walletBalance = parseFloat(ethers.formatEther(bal));
+          const short = userAddress.slice(0, 6) + '...' + userAddress.slice(-4);
+          document.getElementById('wallet-btn').textContent = `${short} | ${RM.walletBalance.toFixed(1)} MON`;
         }
-        DEMO_MODE = false;
-        PHASE_TIMING = LIVE_TIMING;
-        track.classList.add('live');
-        demoLabel.classList.remove('active');
-        liveLabel.classList.add('active', 'live-active');
-        SFX.walletConnect();
-        // Sync to on-chain timing — will set correct phase, raceId, and data
-        syncToLivePhase();
-        return; // syncToLivePhase handles everything
-      } else {
-        // Switch to DEMO
-        DEMO_MODE = true;
-        PHASE_TIMING = DEMO_TIMING;
-        track.classList.remove('live');
-        liveLabel.classList.remove('active', 'live-active');
-        demoLabel.classList.add('active');
-        SFX.click();
-        stopLivePolling();
+        updateClaimBanner();
+        updateBalanceDisplay();
+      } catch (err) {
+        SFX.error();
+        console.error('Claim failed:', err);
+        alert('Claim failed: ' + (err.reason || err.message || 'unknown error'));
       }
-
-      // Reset race state for DEMO mode
-      RM.myBet = null;
-      RM.mockBets = {};
-      RM.switchMode = false;
-      RM.mockWinnings = 0;
-      RM.mockBalance = 50.0;
-      updateBalanceDisplay();
-      updateClaimBanner();
-
-      // Restart DEMO cycle
-      cleanupRace();
-      setPhase('waiting');
-    };
-
-    window.claimWinnings = function() {
-      SFX.chaChing();
-      RM.mockWinnings = 0;
-      if (userAddress) {
-        const short = userAddress.slice(0, 6) + '...' + userAddress.slice(-4);
-        document.getElementById('wallet-btn').textContent = `${short} | ${RM.mockBalance.toFixed(1)} MON`;
-      }
-      updateClaimBanner();
-      updateBalanceDisplay();
     };
 
     window.updateModalCountdown = function() {
@@ -2177,8 +2105,11 @@
 
     function updateClaimBanner() {
       const banner = document.getElementById('claim-banner');
-      if (RM.mockWinnings > 0 && RM.walletConnected) {
-        banner.textContent = `> UNCLAIMED: ${RM.mockWinnings.toFixed(2)} MON  [ CLAIM ]`;
+      // Show claim banner if user won and hasn't claimed
+      if (RM.myBet && RM.phase === 'results' && RM.walletConnected && RM.finishOrder[0] === RM.myBet.bullIndex) {
+        const myPool = getTotalPoolForBull(RM.myBet.bullIndex);
+        const payout = (getTotalPool() * 0.9) * (RM.myBet.amount / myPool);
+        banner.textContent = `> UNCLAIMED: ${payout.toFixed(2)} MON  [ CLAIM ]`;
         banner.classList.add('visible');
       } else {
         banner.classList.remove('visible');
@@ -2188,10 +2119,11 @@
     function updateBalanceDisplay() {
       const el = document.getElementById('bal-display');
       if (RM.walletConnected) {
-        el.textContent = `BAL: ${RM.mockBalance.toFixed(1)} MON`;
+        el.textContent = `BAL: ${RM.walletBalance.toFixed(1)} MON`;
         el.classList.add('active');
       } else {
         el.textContent = 'BAL: --.-- MON';
+        el.classList.remove('active');
       }
     }
 
@@ -2727,6 +2659,13 @@
       const ybp = document.getElementById('your-bet-panel');
       const pi = document.getElementById('phase-info');
       const trigBtn = document.getElementById('bet-trigger-btn');
+      const phaseInd = document.getElementById('phase-indicator');
+
+      // Update title bar phase indicator
+      phaseInd.className = '';
+      const phaseLabels = { waiting: 'WAITING', betting: 'BETTING', revealing: 'REVEAL', switching: 'SWITCHING', racing: 'RACING', results: 'CLOSED' };
+      phaseInd.textContent = phaseLabels[phase] || phase.toUpperCase();
+      phaseInd.classList.add(phase === 'results' || phase === 'revealing' ? 'closed' : phase);
 
       // Reset visibility
       pd.className = ''; pd.style.display = 'block';
@@ -2745,20 +2684,13 @@
           document.getElementById('track-info').textContent = '> TRACK: --- | 8 BULLS';
           ybp.classList.remove('visible');
           document.getElementById('winner').style.display = 'none';
-          // Generate data
-          if (DEMO_MODE) {
-            generateRaceData();
-            RM.raceId++;
-          } else {
-            // LIVE mode: set raceId from UTC, load on-chain data async
-            const live = getLiveState();
-            RM.raceId = live.raceId;
-            RM.liveRaceId = live.raceId;
-            liveRaceDataLoaded = false;
-            generateRaceData(); // kicks off loadLiveRaceData() async
-          }
-          const mTag = DEMO_MODE ? 'DEMO' : 'LIVE';
-          document.querySelector('#title-bar .title-text').textContent = `> MOONAD // ${mTag} RACE #${RM.raceId}`;
+          // Generate data from on-chain
+          const live = getLiveState();
+          RM.raceId = live.raceId;
+          RM.liveRaceId = live.raceId;
+          liveRaceDataLoaded = false;
+          generateRaceData();
+          document.querySelector('#title-bar .title-text').textContent = `> MOONAD // LIVE RACE #${RM.raceId}`;
           break;
 
         case 'betting':
@@ -2841,12 +2773,6 @@
     }
 
     function getPhaseTimeRemaining() {
-      if (DEMO_MODE) {
-        const elapsed = clock.getElapsedTime() - RM.phaseStart;
-        const duration = PHASE_TIMING[RM.phase] || 999;
-        return Math.max(0, duration - elapsed);
-      }
-      // LIVE mode: compute from UTC (mirrors contract timing exactly)
       const live = getLiveState();
       switch (RM.phase) {
         case 'waiting':
@@ -2889,8 +2815,7 @@
       if (remaining <= 0) {
         switch (RM.phase) {
           case 'waiting':
-            // In LIVE mode, wait for on-chain data before advancing
-            if (!DEMO_MODE && !liveRaceDataLoaded) return;
+            if (!liveRaceDataLoaded) return;
             setPhase('betting');
             break;
           case 'betting': setPhase('revealing'); break;
@@ -3204,7 +3129,8 @@
 
           setTimeout(() => {
             pd.classList.remove('lfg');
-            setPhase('waiting');
+            // Auto-sync to live phase on startup
+            syncToLivePhase();
           }, 1500);
         }, 800);
       });
