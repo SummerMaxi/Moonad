@@ -90,6 +90,10 @@ contract BullRaceBetting is ReentrancyGuard, Ownable, Pausable, IEntropyConsumer
     // Seeder reward balances: seeder address => token => claimable amount
     mapping(address => mapping(address => uint256)) public seederBalance;
 
+    // Leaderboard: cumulative stats per address
+    mapping(address => uint256) public totalWinnings;
+    mapping(address => uint256) public racesWon;
+
     // Race data
     mapping(uint256 => RaceConfig) private _races;
     mapping(uint256 => RaceResults) private _results;
@@ -358,6 +362,10 @@ contract BullRaceBetting is ReentrancyGuard, Ownable, Pausable, IEntropyConsumer
         uint256 userBet = uint256(bet.amount);
         uint256 winningPool = bullPools[raceId][race.payoutBullId];
         uint256 payout = (netPool * userBet) / winningPool;
+
+        // Update leaderboard stats
+        totalWinnings[msg.sender] += payout;
+        racesWon[msg.sender] += 1;
 
         _sendPayment(race.token, msg.sender, payout);
 
