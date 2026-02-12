@@ -1106,6 +1106,7 @@
       walletConnected: false,
       switchMode: false,   // true when user is picking a new bull to switch to
       seeded: false,       // whether current race has VRF seed
+      raceResolved: false, // whether current race is resolved on-chain
     };
 
     // ======== SCENE ========
@@ -1657,6 +1658,7 @@
       // Load on-chain data for this race
       RM.myBet = null;
       RM.bullPools = {};
+      RM.raceResolved = false;
       await loadLiveRaceData();
       liveRaceDataLoaded = true;
 
@@ -1682,18 +1684,22 @@
           try {
             const info = await contract.getRaceInfo(live.raceId);
             if (info.resolved) {
+              RM.raceResolved = true;
               const results = await contract.getRaceResults(live.raceId);
               RM.finishOrder = Array.from(results.finishOrder).map(Number);
-              // Build scores indexed by bull ID (higher = better)
               RM.scores = new Array(NUM_BULLS).fill(0);
               for (let r = 0; r < NUM_BULLS; r++) RM.scores[RM.finishOrder[r]] = NUM_BULLS - r;
               setPhase('results');
-            } else if (live.remaining > 200) {
-              computeRaceResults();
-              setPhase('racing');
             } else {
+              // Race not resolved yet — compute local results for display
               computeRaceResults();
-              setPhase('results');
+              if (live.remaining > 200) {
+                setPhase('racing');
+              } else {
+                setPhase('results');
+              }
+              // Auto-resolve on-chain if wallet connected and race is seeded
+              tryAutoResolve(live.raceId);
             }
           } catch (e) {
             computeRaceResults();
@@ -1742,6 +1748,22 @@
           }
           updatePoolDisplay();
           if (RM.phase === 'betting' || RM.phase === 'switching') renderBullCards();
+
+          // In CLOSED/results phase: check if race has been resolved on-chain
+          if ((RM.phase === 'racing' || RM.phase === 'results') && !RM.raceResolved) {
+            const info = await contract.getRaceInfo(live.raceId);
+            if (info.resolved) {
+              RM.raceResolved = true;
+              const results = await contract.getRaceResults(live.raceId);
+              RM.finishOrder = Array.from(results.finishOrder).map(Number);
+              RM.scores = new Array(NUM_BULLS).fill(0);
+              for (let r = 0; r < NUM_BULLS; r++) RM.scores[RM.finishOrder[r]] = NUM_BULLS - r;
+              if (RM.phase === 'results') { renderResults(); updateClaimBanner(); }
+            } else {
+              // Try to auto-resolve if we have a wallet
+              tryAutoResolve(live.raceId);
+            }
+          }
         } catch (e) {
           console.error('Live poll error:', e);
         }
@@ -1752,6 +1774,38 @@
       if (livePollInterval) {
         clearInterval(livePollInterval);
         livePollInterval = null;
+      }
+    }
+
+    /** Auto-resolve a race on-chain (permissionless — anyone pays gas) */
+    let _autoResolving = false;
+    async function tryAutoResolve(raceId) {
+      if (_autoResolving || RM.raceResolved) return;
+      if (!contractWrite || !RM.seeded) return; // need wallet + seed
+      _autoResolving = true;
+      try {
+        console.log(`[AutoResolve] Calling resolveRace(${raceId})...`);
+        const tx = await contractWrite.resolveRace(raceId);
+        await tx.wait();
+        console.log(`[AutoResolve] Race ${raceId} resolved on-chain`);
+        RM.raceResolved = true;
+        // Reload on-chain results
+        const results = await contract.getRaceResults(raceId);
+        RM.finishOrder = Array.from(results.finishOrder).map(Number);
+        RM.scores = new Array(NUM_BULLS).fill(0);
+        for (let r = 0; r < NUM_BULLS; r++) RM.scores[RM.finishOrder[r]] = NUM_BULLS - r;
+        if (RM.phase === 'results') {
+          renderResults();
+          updateClaimBanner();
+        }
+      } catch (e) {
+        // Already resolved by someone else, or other error
+        if (e.message && e.message.includes('Already resolved')) {
+          RM.raceResolved = true;
+        }
+        console.error('[AutoResolve] Failed:', e.reason || e.message);
+      } finally {
+        _autoResolving = false;
       }
     }
 
@@ -2039,10 +2093,14 @@
         const won = myRank === 0;
         if (won) {
           const myPool = getTotalPoolForBull(RM.myBet.bullIndex);
-          const payout = (getTotalPool() * 0.9) * (RM.myBet.amount / myPool);
+          const payout = myPool > 0 ? (getTotalPool() * 0.9) * (RM.myBet.amount / myPool) : 0;
           const profit = payout - RM.myBet.amount;
           html += `<div class="your-result won">> YOU WON! +${profit.toFixed(2)} MON (${payout.toFixed(2)} total)</div>`;
-          html += `<button class="claim-btn" onclick="claimWinnings()">[ CLAIM ${payout.toFixed(2)} MON ]</button>`;
+          if (RM.raceResolved) {
+            html += `<button class="claim-btn" onclick="claimWinnings()">[ CLAIM ${payout.toFixed(2)} MON ]</button>`;
+          } else {
+            html += `<div style="color:var(--secondary);font-size:10px;margin-top:4px">> resolving race on-chain...</div>`;
+          }
         } else {
           html += `<div class="your-result lost">> LOST: -${RM.myBet.amount.toFixed(2)} MON (your bull: #${myRank + 1})</div>`;
         }
@@ -2191,6 +2249,11 @@
 
     window.claimWinnings = async function() {
       if (!contractWrite || !RM.myBet) return;
+      if (!RM.raceResolved) {
+        SFX.error();
+        alert('Race is still being resolved on-chain. Please wait a moment.');
+        return;
+      }
       try {
         const tx = await contractWrite.claimWinnings(RM.raceId);
         SFX.chaChing();
@@ -2221,10 +2284,10 @@
 
     function updateClaimBanner() {
       const banner = document.getElementById('claim-banner');
-      // Show claim banner if user won and hasn't claimed
-      if (RM.myBet && RM.phase === 'results' && RM.walletConnected && RM.finishOrder[0] === RM.myBet.bullIndex) {
+      // Show claim banner only if user won, race resolved on-chain, and hasn't claimed
+      if (RM.myBet && RM.phase === 'results' && RM.walletConnected && RM.raceResolved && RM.finishOrder[0] === RM.myBet.bullIndex) {
         const myPool = getTotalPoolForBull(RM.myBet.bullIndex);
-        const payout = (getTotalPool() * 0.9) * (RM.myBet.amount / myPool);
+        const payout = myPool > 0 ? (getTotalPool() * 0.9) * (RM.myBet.amount / myPool) : 0;
         banner.textContent = `> UNCLAIMED: ${payout.toFixed(2)} MON  [ CLAIM ]`;
         banner.classList.add('visible');
       } else {
