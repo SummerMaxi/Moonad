@@ -120,7 +120,7 @@
     }
     #start-overlay.hidden { display: none; }
     #start-overlay .boot-lines {
-      font-size: 12px; color: var(--muted); text-align: left;
+      font-size: 12px; color: var(--primary); text-align: left;
       margin-bottom: 24px; line-height: 1.8;
     }
     #start-overlay .boot-lines .ok { color: var(--primary); }
@@ -707,7 +707,7 @@
   </div>
 
   <div id="claim-banner" onclick="claimWinnings()"></div>
-  <div id="wallet-btn" onclick="mockConnectWallet()">[ CONNECT WALLET ]</div>
+  <div id="wallet-btn" onclick="connectWallet()">[ CONNECT WALLET ]</div>
 
   <div id="track-banner">
     <div class="tb-header">+-- TRACK --+</div>
@@ -800,11 +800,13 @@
   </div>
   <div id="countdown"></div>
 
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
   <script type="importmap">
   {
     "imports": {
       "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+      "@reown/appkit-cdn": "https://cdn.jsdelivr.net/npm/@reown/appkit-cdn@1.8.18/dist/appkit.js"
     }
   }
   </script>
@@ -813,6 +815,7 @@
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
     import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
     import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+    import { createAppKit, WagmiAdapter } from '@reown/appkit-cdn';
 
     // ======== CONFIGURATION ========
     const DEMO_MODE = true;
@@ -855,6 +858,158 @@
 
     const STAT_NAMES = ['SPD', 'STA', 'ACC', 'STR', 'AGI', 'TMP'];
     const STAT_FULL = ['SPEED', 'STAMINA', 'ACCEL', 'STRENGTH', 'AGILITY', 'TEMPER'];
+
+    // ======== CONTRACT CONFIG ========
+    const CONTRACT_ADDRESS = '0x610EE21e146EF0D19Fdf2358d9B81f7301523768';
+    const MONAD_CHAIN_ID = '0x8F'; // 143
+    const MONAD_RPC = 'https://rpc.monad.xyz';
+    const ALCHEMY_RPC = 'https://monad-mainnet.g.alchemy.com/v2/GuQROHBRDBM1TNytlqOs9';
+    const WALLETCONNECT_PROJECT_ID = '83e6999ad193280ea7045f3676eed19e';
+    const CONTRACT_ABI = [
+      // View functions
+      'function getCurrentRaceId() view returns (uint256)',
+      'function getRaceStartTime(uint256 raceId) view returns (uint256)',
+      'function getRacePhase(uint256 raceId) view returns (uint8)',
+      'function isBettingOpen(uint256 raceId) view returns (bool)',
+      'function isSwitchingOpen(uint256 raceId) view returns (bool)',
+      'function getPhaseTimeRemaining(uint256 raceId) view returns (uint256)',
+      'function getRaceInfo(uint256 raceId) view returns (uint8 phase, address token, uint256 totalPool, uint8 numBulls, bool resolved, bool cancelled)',
+      'function getRaceResults(uint256 raceId) view returns (uint8[8] finishOrder, uint256[8] finishTimes, uint32 resolvedAt)',
+      'function getRaceSeedData(uint256 raceId) view returns (uint8[48] stats, uint8 trackType, bytes32 commitHash, bytes32 seed)',
+      'function getBullPool(uint256 raceId, uint8 bullId) view returns (uint256)',
+      'function getAllBullPools(uint256 raceId) view returns (uint256[8])',
+      'function getUserBet(uint256 raceId, address user) view returns (bool exists, uint8 bullId, uint256 amount, bool claimed)',
+      'function getPotentialPayout(uint256 raceId, uint8 bullId, uint256 amount) view returns (uint256)',
+      'function getAcceptedTokens() view returns (address[])',
+      'function minBetAmount(address token) view returns (uint256)',
+      'function epoch() view returns (uint256)',
+      'function cycleDuration() view returns (uint256)',
+      'function bettingDuration() view returns (uint256)',
+      'function switchingEnd() view returns (uint256)',
+      // Write functions
+      'function placeBet(uint256 raceId, uint8 bullId, address token, uint256 amount) payable',
+      'function switchBet(uint256 raceId, uint8 newBullId)',
+      'function claimWinnings(uint256 raceId)',
+      'function claimRefund(uint256 raceId)',
+      // Events
+      'event BetPlaced(uint256 indexed raceId, address indexed bettor, uint8 bullId, address token, uint256 amount)',
+      'event BetSwitched(uint256 indexed raceId, address indexed bettor, uint8 oldBullId, uint8 newBullId, uint256 fee)',
+      'event RaceResolved(uint256 indexed raceId, uint8[8] finishOrder, uint256[8] finishTimes, uint256 totalPool)',
+      'event WinningsClaimed(uint256 indexed raceId, address indexed bettor, uint256 payout)',
+      'event RefundClaimed(uint256 indexed raceId, address indexed bettor, uint256 amount)',
+    ];
+
+    // Web3 state
+    let provider = null;
+    let signer = null;
+    let contract = null;       // read-only (provider)
+    let contractWrite = null;  // write (signer)
+    let userAddress = null;
+
+    // ======== APPKIT INITIALIZATION ========
+    const monadMainnet = {
+      id: 'eip155:143',
+      chainId: 143,
+      name: 'Monad',
+      currency: 'MON',
+      explorerUrl: 'https://monadexplorer.com',
+      rpcUrl: ALCHEMY_RPC,
+      chainNamespace: 'eip155',
+    };
+
+    const wagmiAdapter = new WagmiAdapter({
+      projectId: WALLETCONNECT_PROJECT_ID,
+      networks: [monadMainnet],
+    });
+
+    const appKitModal = createAppKit({
+      adapters: [wagmiAdapter],
+      networks: [monadMainnet],
+      projectId: WALLETCONNECT_PROJECT_ID,
+      metadata: {
+        name: 'Moonad',
+        description: 'Bull Racing on Monad',
+        url: 'https://moonad.fun',
+        icons: [],
+      },
+      themeMode: 'dark',
+      themeVariables: {
+        '--w3m-accent': '#33ff00',
+        '--w3m-border-radius-master': '0px',
+        '--w3m-font-family': '"Fira Mono", "Courier New", monospace',
+        '--w3m-z-index': 200,
+      },
+    });
+
+    // AppKit EIP-1193 provider reference
+    let appKitEip155Provider = null;
+
+    // Subscribe to provider events — capture the EIP-1193 provider when available
+    appKitModal.subscribeProviders(providers => {
+      if (providers && providers['eip155']) {
+        appKitEip155Provider = providers['eip155'];
+      }
+    });
+
+    // Subscribe to connection state changes
+    appKitModal.subscribeState(async state => {
+      if (state.selectedNetworkId && appKitEip155Provider && !RM.walletConnected) {
+        await setupEthersFromAppKit();
+      }
+    });
+
+    // Also listen for the connect event via caipNetworkIdChanged or account
+    appKitModal.subscribeAccount && appKitModal.subscribeAccount(async account => {
+      if (account && account.address && appKitEip155Provider && !RM.walletConnected) {
+        await setupEthersFromAppKit();
+      } else if (account && !account.address && RM.walletConnected) {
+        teardownWallet();
+      }
+    });
+
+    async function setupEthersFromAppKit() {
+      try {
+        if (!appKitEip155Provider) return;
+        provider = new ethers.BrowserProvider(appKitEip155Provider, 143);
+        signer = await provider.getSigner();
+        userAddress = await signer.getAddress();
+        contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
+        contractWrite = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+
+        const bal = await provider.getBalance(userAddress);
+        RM.mockBalance = parseFloat(ethers.formatEther(bal));
+        RM.walletConnected = true;
+
+        const btn = document.getElementById('wallet-btn');
+        const short = userAddress.slice(0, 6) + '...' + userAddress.slice(-4);
+        btn.textContent = `${short} | ${RM.mockBalance.toFixed(1)} MON`;
+        btn.classList.add('connected');
+
+        SFX.walletConnect();
+        updateBalanceDisplay();
+        updateClaimBanner();
+        console.log('[AppKit] Wallet connected:', userAddress);
+      } catch (err) {
+        console.error('[AppKit] setupEthersFromAppKit failed:', err);
+      }
+    }
+
+    function teardownWallet() {
+      RM.walletConnected = false;
+      userAddress = null;
+      signer = null;
+      provider = null;
+      contract = null;
+      contractWrite = null;
+      appKitEip155Provider = null;
+
+      const btn = document.getElementById('wallet-btn');
+      btn.textContent = '[ CONNECT WALLET ]';
+      btn.classList.remove('connected');
+      updateBalanceDisplay();
+      updateClaimBanner();
+      console.log('[AppKit] Wallet disconnected');
+    }
 
     // ======== TYPEWRITER TEXT EFFECT ========
     let _typewriterTimeout = null;
@@ -901,6 +1056,7 @@
       mockBalance: 50.0,   // starting balance
       mockWinnings: 0,
       walletConnected: false,
+      switchMode: false,   // true when user is picking a new bull to switch to
     };
 
     // ======== SCENE ========
@@ -1325,6 +1481,18 @@
         const isMyBet = RM.myBet && RM.myBet.bullIndex === i;
         const card = document.createElement('div');
         card.className = 'bull-card' + (isMyBet ? ' selected' : '');
+
+        let cardBtnHtml;
+        if (RM.switchMode && RM.myBet) {
+          if (isMyBet) {
+            cardBtnHtml = `<button class="bet-btn placed">[ CURRENT ]</button>`;
+          } else {
+            cardBtnHtml = `<button class="bet-btn" style="border-color:var(--secondary);color:var(--secondary)" onclick="confirmSwitch(${i})">[ SWITCH ]</button>`;
+          }
+        } else {
+          cardBtnHtml = `<button class="bet-btn ${isMyBet ? 'placed' : ''}" onclick="openBetModal(${i})">${isMyBet ? '[ BET PLACED ]' : '[ BET ]'}</button>`;
+        }
+
         card.innerHTML = `
           <div class="card-name" style="color:${bc.dot}">${bc.name}</div>
           ${barsHtml}
@@ -1332,7 +1500,7 @@
             <span>POOL: ${pool.toFixed(1)}</span>
             <span class="card-odds">${odds}x</span>
           </div>
-          <button class="bet-btn ${isMyBet ? 'placed' : ''}" onclick="openBetModal(${i})">${isMyBet ? '[ BET PLACED ]' : '[ BET ]'}</button>
+          ${cardBtnHtml}
           <div class="warning-badge" id="warn-${i}"></div>
         `;
         container.appendChild(card);
@@ -1378,7 +1546,16 @@
 
       // Bet button
       let btnHtml = '';
-      if (isMyBet) {
+      if (RM.switchMode && RM.myBet) {
+        // Switch mode: show switch-to buttons
+        if (isMyBet) {
+          btnHtml = `<button class="carousel-bet-btn placed">[ CURRENT BET ]</button>`;
+        } else {
+          const remaining = (RM.myBet.amount * 0.95).toFixed(2);
+          btnHtml = `<button class="carousel-bet-btn" style="border-color:var(--secondary);color:var(--secondary)" onclick="confirmSwitch(${i})">[ SWITCH TO ${bc.name.toUpperCase()} ]</button>`;
+          btnHtml += `<div style="color:var(--muted);font-size:9px;margin-top:4px;text-align:center">5% fee \u2192 ${remaining} MON</div>`;
+        }
+      } else if (isMyBet) {
         btnHtml = `<button class="carousel-bet-btn placed">[ BET PLACED \u2713 ]</button>`;
         btnHtml += `<div style="color:var(--secondary);font-size:10px;margin-top:6px;text-align:center">YOUR BET: ${RM.myBet.amount.toFixed(2)} MON</div>`;
       } else if (!RM.myBet && RM.walletConnected) {
@@ -1386,7 +1563,7 @@
       } else if (RM.myBet && RM.walletConnected) {
         btnHtml = `<button class="carousel-bet-btn" style="color:#555;border-color:#555;cursor:default">[ BET PLACED ON ${bullColors[RM.myBet.bullIndex].name.toUpperCase()} ]</button>`;
       } else {
-        btnHtml = `<button class="carousel-bet-btn" style="color:#555;border-color:#555" onclick="mockConnectWallet()">[ CONNECT WALLET ]</button>`;
+        btnHtml = `<button class="carousel-bet-btn" style="color:#555;border-color:#555" onclick="connectWallet()">[ CONNECT WALLET ]</button>`;
       }
 
       body.innerHTML = `
@@ -1499,10 +1676,10 @@
       }
       if (warnings.length > 0) {
         html += warnings.map(w => `<div class="yb-warning">${w}</div>`).join('');
-        if (RM.phase === 'switching') {
-          html += `<button class="switch-btn" onclick="openSwitchMode()">[ SWITCH BET ] (5% FEE)</button>`;
-          html += `<div style="color:var(--muted);font-size:8px;margin-top:2px">You keep: ${(RM.myBet.amount * 0.95).toFixed(2)} MON</div>`;
-        }
+      }
+      if (RM.phase === 'switching') {
+        html += `<button class="switch-btn" onclick="openSwitchMode()">[ SWITCH BET ] (5% FEE)</button>`;
+        html += `<div style="color:var(--muted);font-size:8px;margin-top:2px">You keep: ${(RM.myBet.amount * 0.95).toFixed(2)} MON</div>`;
       }
       panel.innerHTML = html;
     }
@@ -1620,42 +1797,65 @@
     window.openSwitchMode = function() {
       if (RM.phase !== 'switching' || !RM.myBet) return;
       SFX.click();
-      const oldAmount = RM.myBet.amount;
-      const fee = oldAmount * 0.05;
-      const remaining = oldAmount - fee;
-      // Reset bet, allow re-picking
-      RM.myBet = null;
-      RM.mockBalance -= fee; // fee is lost
+      RM.switchMode = true;
+      // Open betting panel so user can browse and pick a new bull
+      renderBullCards();
+      openBettingPanel();
+      // Update your-bet panel to show switch-mode state
+      const panel = document.getElementById('your-bet-body');
+      const bc = bullColors[RM.myBet.bullIndex];
+      panel.innerHTML = `<div style="color:var(--secondary);font-weight:700;margin-bottom:4px">> SWITCH MODE</div>
+        <div>Current: <span style="color:${bc.dot}">${bc.name}</span> (${RM.myBet.amount.toFixed(2)} MON)</div>
+        <div style="color:var(--muted);font-size:9px;margin-top:2px">Pick a new bull. 5% fee applies.</div>
+        <button class="switch-btn" onclick="cancelSwitchMode()" style="margin-top:6px">[ CANCEL ]</button>`;
+    };
+
+    window.cancelSwitchMode = function() {
+      RM.switchMode = false;
+      SFX.click();
       renderBullCards();
       if (document.getElementById('betting-panel').classList.contains('visible')) {
         renderBettingPanel();
       }
-      updatePoolDisplay();
-      document.getElementById('your-bet-panel').classList.remove('visible');
-      document.getElementById('bet-trigger-btn').textContent = '[ PLACE YOUR BETS ]';
-      // Now the user can click a new bull card. Their amount will be 'remaining'
-      window._switchRemaining = remaining;
+      showWarnings();
     };
 
-    window.mockConnectWallet = function() {
-      SFX.walletConnect();
-      RM.walletConnected = !RM.walletConnected;
-      const btn = document.getElementById('wallet-btn');
-      if (RM.walletConnected) {
-        btn.textContent = `0xMo0n...AD | ${RM.mockBalance.toFixed(1)} MON`;
-        btn.classList.add('connected');
-      } else {
-        btn.textContent = '[ CONNECT WALLET ]';
-        btn.classList.remove('connected');
-      }
+    window.confirmSwitch = function(newBullIndex) {
+      if (!RM.myBet || !RM.switchMode) return;
+      if (newBullIndex === RM.myBet.bullIndex) { SFX.error(); return; }
+      SFX.confirm();
+      const oldAmount = RM.myBet.amount;
+      const fee = oldAmount * 0.05;
+      const remaining = oldAmount - fee;
+      RM.myBet = { bullIndex: newBullIndex, amount: remaining };
+      RM.mockBalance -= fee;
+      RM.switchMode = false;
+      closeBettingPanel();
+      renderBullCards();
+      updatePoolDisplay();
       updateBalanceDisplay();
-      updateClaimBanner();
+      showWarnings();
+    };
+
+    window.connectWallet = async function() {
+      SFX.click();
+      if (RM.walletConnected) {
+        await appKitModal.disconnect();
+        teardownWallet();
+      } else {
+        // Clear any stale cached session before showing wallet selection
+        try { await appKitModal.disconnect(); } catch(e) {}
+        appKitModal.open({ view: 'Connect' });
+      }
     };
 
     window.claimWinnings = function() {
       SFX.chaChing();
       RM.mockWinnings = 0;
-      document.getElementById('wallet-btn').textContent = `0xMo0n...AD | ${RM.mockBalance.toFixed(1)} MON`;
+      if (userAddress) {
+        const short = userAddress.slice(0, 6) + '...' + userAddress.slice(-4);
+        document.getElementById('wallet-btn').textContent = `${short} | ${RM.mockBalance.toFixed(1)} MON`;
+      }
       updateClaimBanner();
       updateBalanceDisplay();
     };
@@ -1761,7 +1961,9 @@
         <span style="color:var(--secondary)">${odds}x</span>
       </div>`;
 
-      if ((RM.phase === 'betting' || RM.phase === 'switching') && !RM.myBet && RM.walletConnected) {
+      if (RM.switchMode && RM.myBet && RM.myBet.bullIndex !== bullIndex) {
+        html += `<button class="popup-bet-btn" style="border-color:var(--secondary);color:var(--secondary)" onclick="hideBullStatPopup(); confirmSwitch(${bullIndex})">[ SWITCH TO ${bc.name.toUpperCase()} ]</button>`;
+      } else if ((RM.phase === 'betting' || RM.phase === 'switching') && !RM.myBet && RM.walletConnected) {
         html += `<button class="popup-bet-btn" onclick="hideBullStatPopup(); openBetModal(${bullIndex})">[ BET ON ${bc.name.toUpperCase()} ]</button>`;
       }
 
@@ -2211,6 +2413,7 @@
     function setPhase(phase) {
       RM.phase = phase;
       RM.phaseStart = clock.getElapsedTime();
+      RM.switchMode = false;
       const pd = document.getElementById('phase-display');
       const bc = document.getElementById('bull-cards');
       const rp = document.getElementById('results-panel');
@@ -2615,10 +2818,9 @@
       const bootMsgs = [
         ['> MOONAD BULL RACE v1.0', 'ok'],
         ['> gpu_renderer: ' + (renderer.info.render ? 'ACTIVE' : 'READY'), 'ok'],
-        ['> bull_model: LOADED (8 UNITS)', 'ok'],
-        ['> animation_clips: ' + loadedAnimations.length + ' LOADED', 'ok'],
+        ['> bull_run: READY', 'ok'],
         ['> track_engine: READY', 'ok'],
-        ['> betting_contract: STANDBY', 'ok'],
+        ['> betting_contract: ' + CONTRACT_ADDRESS.slice(0, 10) + '...', 'ok'],
       ];
       let bootIdx = 0;
       function showNextBoot() {
