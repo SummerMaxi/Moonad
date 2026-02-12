@@ -23,6 +23,42 @@
     body { overflow: hidden; background: var(--bg); font-family: var(--font); }
     canvas { display: block; }
 
+    /* AppKit modal terminal override */
+    w3m-modal {
+      --wui-color-bg-100: #0a0a0a !important;
+      --wui-color-bg-125: #0d0d0d !important;
+      --wui-color-bg-150: #111111 !important;
+      --wui-color-bg-175: #151515 !important;
+      --wui-color-bg-200: #1a1a1a !important;
+      --wui-color-bg-225: #1e1e1e !important;
+      --wui-color-bg-250: #222222 !important;
+      --wui-color-bg-275: #262626 !important;
+      --wui-color-bg-300: #2a2a2a !important;
+      --wui-color-fg-100: #33ff00 !important;
+      --wui-color-fg-125: #33ff00 !important;
+      --wui-color-fg-150: #2bcc00 !important;
+      --wui-color-fg-200: #1f521f !important;
+      --wui-color-fg-225: #1f521f !important;
+      --wui-color-fg-250: #1a3a1a !important;
+      --wui-color-fg-275: #143014 !important;
+      --wui-color-fg-300: #0f250f !important;
+      --wui-color-accent-100: #33ff00 !important;
+      --wui-color-accent-090: rgba(51, 255, 0, 0.9) !important;
+      --wui-color-accent-080: rgba(51, 255, 0, 0.8) !important;
+      --wui-border-radius-5xs: 0px !important;
+      --wui-border-radius-4xs: 0px !important;
+      --wui-border-radius-3xs: 0px !important;
+      --wui-border-radius-xxs: 0px !important;
+      --wui-border-radius-xs: 0px !important;
+      --wui-border-radius-s: 0px !important;
+      --wui-border-radius-m: 0px !important;
+      --wui-border-radius-l: 0px !important;
+      --wui-border-radius-3xl: 0px !important;
+      --wui-font-family: 'JetBrains Mono', 'Fira Code', monospace !important;
+      --wui-box-shadow-light: 0 0 10px rgba(51, 255, 0, 0.15) !important;
+      --wui-box-shadow-dark: 0 0 20px rgba(51, 255, 0, 0.1) !important;
+    }
+
     /* CRT Scanline overlay */
     #crt-overlay {
       position: fixed; top: 0; left: 0; width: 100%; height: 100%;
@@ -935,8 +971,11 @@
       themeMode: 'dark',
       themeVariables: {
         '--w3m-accent': '#33ff00',
+        '--w3m-color-mix': '#0a0a0a',
+        '--w3m-color-mix-strength': 80,
         '--w3m-border-radius-master': '0px',
-        '--w3m-font-family': '"Fira Mono", "Courier New", monospace',
+        '--w3m-font-family': "'JetBrains Mono', 'Fira Code', monospace",
+        '--w3m-font-size-master': '10px',
         '--w3m-z-index': 200,
       },
     });
