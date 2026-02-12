@@ -59,7 +59,7 @@
     #phase-indicator.racing { background: var(--error); }
     #phase-indicator.closed { background: var(--muted); color: #ccc; }
     #phase-indicator.waiting { background: var(--muted); color: #ccc; }
-    #clock-display { color: var(--primary); font-weight: 700; font-size: 12px; letter-spacing: 1px; text-shadow: var(--glow); }
+    #clock-display { color: var(--primary); font-weight: 700; font-size: 11px; letter-spacing: 1px; text-shadow: var(--glow); white-space: nowrap; }
     #pool-display { color: var(--secondary); font-weight: 700; }
 
     /* Leaderboard */
@@ -2911,11 +2911,24 @@
         const m = Math.floor(remaining / 60);
         const s = Math.floor(remaining % 60);
         const timeStr = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-        document.getElementById('clock-display').textContent = timeStr;
+        const clockEl = document.getElementById('clock-display');
+        const phaseLabels = {
+          waiting: '> loading in',
+          betting: '> betting closes in',
+          switching: '> switching closes in',
+          results: '> next race in',
+        };
+        clockEl.textContent = `${phaseLabels[RM.phase] || '>'} ${timeStr}`;
         // Also update the next-race-timer in results panel
         if (RM.phase === 'results') {
           const nrt = document.getElementById('next-race-timer');
           if (nrt) nrt.textContent = `> next race in ${timeStr}`;
+        }
+      } else if (RM.phase === 'racing') {
+        // During racing, show elapsed race time
+        const elapsed = clock.getElapsedTime() - raceStartTime;
+        if (raceStarted) {
+          document.getElementById('clock-display').textContent = `> race ${formatTime(elapsed)}`;
         }
       }
 
