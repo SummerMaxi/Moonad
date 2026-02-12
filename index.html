@@ -179,6 +179,20 @@
     #wallet-btn:hover { background: var(--primary); color: var(--bg); text-shadow: none; }
     #wallet-btn.connected { border-color: var(--muted); color: var(--muted); }
 
+    #seed-btn {
+      display: none; position: fixed; top: 6px; left: 12px;
+      background: rgba(10, 10, 10, 0.9);
+      border: 1px solid var(--secondary); color: var(--secondary);
+      font-family: var(--font); font-size: 10px;
+      padding: 4px 10px; cursor: pointer; letter-spacing: 1px;
+      z-index: 55; pointer-events: auto;
+      text-shadow: 0 0 5px rgba(255, 176, 0, 0.5);
+      animation: pulse-border 1.5s ease-in-out infinite;
+    }
+    #seed-btn:hover { background: var(--secondary); color: var(--bg); text-shadow: none; }
+    #seed-btn.hidden { display: none; }
+    #seed-btn.visible { display: block; }
+
     /* ======== NEW: Bull Stat Cards (bottom panel) ======== */
     #bull-cards {
       position: fixed; bottom: 22px; left: 0; right: 0;
@@ -718,6 +732,7 @@
   </div>
 
   <div id="claim-banner" onclick="claimWinnings()"></div>
+  <div id="seed-btn" onclick="seedRace()">[ SEED RACE ]</div>
   <div id="wallet-btn" onclick="connectWallet()">[ CONNECT WALLET ]</div>
 
   <div id="track-banner">
@@ -1084,6 +1099,7 @@
       walletBalance: 0,
       walletConnected: false,
       switchMode: false,   // true when user is picking a new bull to switch to
+      seeded: false,       // whether current race has VRF seed
     };
 
     // ======== SCENE ========
@@ -1467,6 +1483,7 @@
         RM.liveRaceId = raceId;
         const seedData = await contract.getRaceSeedData(raceId);
         if (seedData.seeded) {
+          RM.seeded = true;
           // Unpack 48-element flat array into 8 bulls × 6 stats
           RM.bullStats = [];
           for (let i = 0; i < NUM_BULLS; i++) {
@@ -1475,13 +1492,16 @@
             RM.bullStats.push(stats);
           }
           RM.trackType = Number(seedData.trackType);
+          updateSeedButton();
         } else {
+          RM.seeded = false;
           // Not seeded yet — use placeholder stats, will refresh when seeded
           RM.bullStats = [];
           for (let i = 0; i < NUM_BULLS; i++) {
             RM.bullStats.push([5, 5, 5, 5, 5, 5]);
           }
           RM.trackType = 0;
+          updateSeedButton();
         }
         // Load on-chain pool data
         const pools = await contract.getAllBullPools(raceId);
@@ -1492,17 +1512,85 @@
         liveRaceDataLoaded = true;
       } catch (e) {
         console.error('Failed to load live race data:', e);
-        // Fallback to demo-style generation
+        RM.seeded = false;
         RM.bullStats = [];
         for (let i = 0; i < NUM_BULLS; i++) {
-          const stats = [];
-          for (let s = 0; s < 6; s++) stats.push(Math.floor(Math.random() * 10) + 1);
-          RM.bullStats.push(stats);
+          RM.bullStats.push([5, 5, 5, 5, 5, 5]);
         }
-        RM.trackType = Math.floor(Math.random() * 10);
+        RM.trackType = 0;
+        updateSeedButton();
         liveRaceDataLoaded = true;
       }
     }
+
+    // ======== SEED BUTTON ========
+
+    function updateSeedButton() {
+      const btn = document.getElementById('seed-btn');
+      const live = getLiveState();
+      // Show seed button only during BETTING/SWITCHING if not yet seeded
+      if (!RM.seeded && (live.contractPhase === 'BETTING' || live.contractPhase === 'SWITCHING')) {
+        btn.classList.add('visible');
+        btn.classList.remove('hidden');
+      } else {
+        btn.classList.remove('visible');
+        btn.classList.add('hidden');
+      }
+    }
+
+    function onSeedArrived() {
+      SFX.phaseChange();
+      const pd = document.getElementById('phase-display');
+      typeText(pd, '> BULLS GENERATED — PLACE YOUR BETS', 30);
+      setTimeout(() => { pd.classList.add('hidden'); }, 3000);
+      if (RM.phase === 'betting' || RM.phase === 'switching') {
+        renderBullCards();
+        updatePoolDisplay();
+        if (document.getElementById('betting-panel').classList.contains('visible')) {
+          renderBettingPanel();
+        }
+        if (loadedModel && bulls.length === 0) spawnBulls();
+      }
+    }
+
+    window.seedRace = async function() {
+      if (RM.seeded) return;
+      if (!contractWrite) {
+        SFX.error();
+        alert('Connect wallet to seed the race');
+        return;
+      }
+      const btn = document.getElementById('seed-btn');
+      btn.textContent = '[ SEEDING... ]';
+      btn.style.pointerEvents = 'none';
+      try {
+        const fee = await contract.getEntropyFee();
+        const tx = await contractWrite.requestRaceSeed(RM.raceId, { value: fee });
+        await tx.wait();
+        SFX.confirm();
+        btn.textContent = '[ SEED REQUESTED ]';
+        // Poll for seed to arrive (VRF callback)
+        let attempts = 0;
+        const seedPoll = setInterval(async () => {
+          attempts++;
+          try {
+            const seedData = await contract.getRaceSeedData(RM.raceId);
+            if (seedData.seeded) {
+              clearInterval(seedPoll);
+              await loadLiveRaceData();
+              onSeedArrived();
+            }
+          } catch (e) {}
+          if (attempts > 30) clearInterval(seedPoll); // give up after 5min
+        }, 10000);
+      } catch (err) {
+        SFX.error();
+        console.error('Seed failed:', err);
+        btn.textContent = '[ SEED RACE ]';
+        btn.style.pointerEvents = '';
+        alert('Seed failed: ' + (err.reason || err.message || 'unknown error'));
+      }
+    };
 
     // ======== LIVE MODE TIMING ========
 
@@ -1618,6 +1706,16 @@
         try {
           const live = getLiveState();
           if (live.raceId !== RM.liveRaceId) return; // Race changed, phase transition handles it
+
+          // If not seeded yet, check for seed arrival
+          if (!RM.seeded) {
+            const seedData = await contract.getRaceSeedData(live.raceId);
+            if (seedData.seeded) {
+              await loadLiveRaceData();
+              onSeedArrived();
+            }
+          }
+
           const pools = await contract.getAllBullPools(live.raceId);
           RM.bullPools = {};
           for (let i = 0; i < NUM_BULLS; i++) {
@@ -2695,15 +2793,20 @@
 
         case 'betting':
           SFX.phaseChange();
-          typeText(pd, '> PLACE YOUR BETS', 40);
-          setTimeout(() => { pd.classList.add('hidden'); }, 2500);
+          if (!RM.seeded) {
+            typeText(pd, '> AWAITING VRF SEED...', 40);
+          } else {
+            typeText(pd, '> PLACE YOUR BETS', 40);
+            setTimeout(() => { pd.classList.add('hidden'); }, 2500);
+          }
           pi.innerHTML = '<span class="phase-badge betting">BETTING</span>';
           trigBtn.textContent = '[ PLACE YOUR BETS ]';
           trigBtn.classList.add('visible');
           renderBullCards();
           updatePoolDisplay();
+          updateSeedButton();
           // Start bulls walking in
-          if (loadedModel) spawnBulls();
+          if (loadedModel && RM.seeded) spawnBulls();
           break;
 
         case 'revealing': {
