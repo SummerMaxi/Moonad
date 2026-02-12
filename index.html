@@ -169,6 +169,40 @@
     #wallet-btn:hover { background: var(--primary); color: var(--bg); text-shadow: none; }
     #wallet-btn.connected { border-color: var(--muted); color: var(--muted); }
 
+    /* Demo/Live toggle */
+    #mode-toggle {
+      position: fixed; top: 6px; left: 12px;
+      display: flex; align-items: center; gap: 8px;
+      z-index: 55; pointer-events: auto;
+      font-family: var(--font); font-size: 10px;
+      letter-spacing: 1px;
+    }
+    #mode-toggle .mode-label {
+      color: var(--muted); cursor: default;
+      transition: color 0.2s, text-shadow 0.2s;
+    }
+    #mode-toggle .mode-label.active {
+      color: var(--primary); text-shadow: var(--glow);
+    }
+    #mode-toggle .toggle-track {
+      width: 36px; height: 16px;
+      border: 1px solid var(--muted);
+      background: rgba(10, 10, 10, 0.9);
+      cursor: pointer; position: relative;
+      transition: border-color 0.2s;
+    }
+    #mode-toggle .toggle-track:hover { border-color: var(--primary); }
+    #mode-toggle .toggle-knob {
+      position: absolute; top: 2px; left: 2px;
+      width: 10px; height: 10px;
+      background: var(--primary);
+      box-shadow: var(--glow);
+      transition: left 0.2s;
+    }
+    #mode-toggle .toggle-track.live .toggle-knob { left: 22px; }
+    #mode-toggle .toggle-track.live { border-color: var(--secondary); }
+    #mode-toggle .mode-label.live-active { color: var(--secondary); text-shadow: 0 0 5px rgba(255, 176, 0, 0.5); }
+
     /* ======== NEW: Bull Stat Cards (bottom panel) ======== */
     #bull-cards {
       position: fixed; bottom: 22px; left: 0; right: 0;
@@ -706,6 +740,14 @@
     </div>
   </div>
 
+  <div id="mode-toggle">
+    <span class="mode-label active" id="mode-demo-label">DEMO</span>
+    <div class="toggle-track" id="mode-toggle-track" onclick="toggleMode()">
+      <div class="toggle-knob"></div>
+    </div>
+    <span class="mode-label" id="mode-live-label">LIVE</span>
+  </div>
+
   <div id="claim-banner" onclick="claimWinnings()"></div>
   <div id="wallet-btn" onclick="connectWallet()">[ CONNECT WALLET ]</div>
 
@@ -818,12 +860,10 @@
     import { createAppKit, WagmiAdapter } from '@reown/appkit-cdn';
 
     // ======== CONFIGURATION ========
-    const DEMO_MODE = true;
-    const PHASE_TIMING = DEMO_MODE ? {
-      waiting: 6, betting: 35, revealing: 3, switching: 25, results: 18
-    } : {
-      waiting: 300, betting: 300, revealing: 3, switching: 180, results: 105
-    };
+    let DEMO_MODE = true;
+    const DEMO_TIMING = { waiting: 6, betting: 35, revealing: 3, switching: 25, results: 18 };
+    const LIVE_TIMING = { waiting: 300, betting: 300, revealing: 3, switching: 180, results: 105 };
+    let PHASE_TIMING = DEMO_TIMING;
 
     const NUM_BULLS = 8;
     const LANE_WIDTH = 2.4;
@@ -1860,6 +1900,53 @@
       }
     };
 
+    window.toggleMode = function() {
+      const track = document.getElementById('mode-toggle-track');
+      const demoLabel = document.getElementById('mode-demo-label');
+      const liveLabel = document.getElementById('mode-live-label');
+      const walletBtn = document.getElementById('wallet-btn');
+
+      if (DEMO_MODE) {
+        // Switch to LIVE
+        if (!RM.walletConnected) {
+          SFX.error();
+          // Flash wallet button to hint they need to connect
+          walletBtn.style.background = 'var(--error)';
+          walletBtn.style.color = '#fff';
+          setTimeout(() => { walletBtn.style.background = ''; walletBtn.style.color = ''; }, 600);
+          return;
+        }
+        DEMO_MODE = false;
+        PHASE_TIMING = LIVE_TIMING;
+        track.classList.add('live');
+        demoLabel.classList.remove('active');
+        liveLabel.classList.add('active', 'live-active');
+        SFX.walletConnect();
+      } else {
+        // Switch to DEMO
+        DEMO_MODE = true;
+        PHASE_TIMING = DEMO_TIMING;
+        track.classList.remove('live');
+        liveLabel.classList.remove('active', 'live-active');
+        demoLabel.classList.add('active');
+        SFX.click();
+      }
+
+      // Reset race state for new mode
+      RM.myBet = null;
+      RM.mockBets = {};
+      RM.switchMode = false;
+      RM.mockWinnings = 0;
+      if (DEMO_MODE) RM.mockBalance = 50.0;
+      updateBalanceDisplay();
+      updateClaimBanner();
+      renderBullCards();
+
+      // Update title
+      const modeTag = DEMO_MODE ? 'DEMO' : 'LIVE';
+      document.querySelector('#title-bar .title-text').textContent = `> MOONAD // ${modeTag} RACE #${RM.raceId}`;
+    };
+
     window.claimWinnings = function() {
       SFX.chaChing();
       RM.mockWinnings = 0;
@@ -2453,7 +2540,8 @@
           // Generate data
           generateRaceData();
           RM.raceId++;
-          document.querySelector('#title-bar .title-text').textContent = `> MOONAD // RACE #${RM.raceId}`;
+          const mTag = DEMO_MODE ? 'DEMO' : 'LIVE';
+          document.querySelector('#title-bar .title-text').textContent = `> MOONAD // ${mTag} RACE #${RM.raceId}`;
           break;
 
         case 'betting':
