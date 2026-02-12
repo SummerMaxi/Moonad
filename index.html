@@ -865,6 +865,15 @@
     const LIVE_TIMING = { waiting: 300, betting: 300, revealing: 3, switching: 180, results: 105 };
     let PHASE_TIMING = DEMO_TIMING;
 
+    // ======== LIVE MODE SYNC (UTC-based timing from contract) ========
+    let liveEpoch = 1770854400;
+    let liveCycleDuration = 900;
+    let liveBettingDuration = 480;
+    let liveSwitchingEnd = 660;
+    let liveConfigLoaded = false;
+    let livePollInterval = null;
+    let liveRaceDataLoaded = false;
+
     const NUM_BULLS = 8;
     const LANE_WIDTH = 2.4;
     const FINISH_X = 500;
@@ -900,7 +909,7 @@
     const STAT_FULL = ['SPEED', 'STAMINA', 'ACCEL', 'STRENGTH', 'AGILITY', 'TEMPER'];
 
     // ======== CONTRACT CONFIG ========
-    const CONTRACT_ADDRESS = '0x610EE21e146EF0D19Fdf2358d9B81f7301523768';
+    const CONTRACT_ADDRESS = '0xC806442E60d3a807a316f3dCD81378E5B6Fe6a64';
     const MONAD_CHAIN_ID = '0x8F'; // 143
     const MONAD_RPC = 'https://rpc.monad.xyz';
     const ALCHEMY_RPC = 'https://monad-mainnet.g.alchemy.com/v2/GuQROHBRDBM1TNytlqOs9';
@@ -915,7 +924,10 @@
       'function getPhaseTimeRemaining(uint256 raceId) view returns (uint256)',
       'function getRaceInfo(uint256 raceId) view returns (uint8 phase, address token, uint256 totalPool, uint8 numBulls, bool resolved, bool cancelled)',
       'function getRaceResults(uint256 raceId) view returns (uint8[8] finishOrder, uint256[8] finishTimes, uint32 resolvedAt)',
-      'function getRaceSeedData(uint256 raceId) view returns (uint8[48] stats, uint8 trackType, bytes32 commitHash, bytes32 seed)',
+      'function getRaceSeedData(uint256 raceId) view returns (uint8[48] stats, uint8 trackType, bytes32 seed, bool seeded)',
+      'function getTrackMultipliers(uint8 trackType) view returns (int8[6])',
+      'function getEntropyFee() view returns (uint128)',
+      'function entropy() view returns (address)',
       'function getBullPool(uint256 raceId, uint8 bullId) view returns (uint256)',
       'function getAllBullPools(uint256 raceId) view returns (uint256[8])',
       'function getUserBet(uint256 raceId, address user) view returns (bool exists, uint8 bullId, uint256 amount, bool claimed)',
@@ -1478,8 +1490,18 @@
       return score;
     }
 
-    // ======== GENERATE MOCK RACE DATA ========
+    // ======== GENERATE RACE DATA ========
     function generateRaceData() {
+      RM.myBet = null;
+      RM.mockBets = {};
+
+      if (!DEMO_MODE && contract) {
+        // LIVE mode: fetch on-chain data
+        loadLiveRaceData();
+        return;
+      }
+
+      // DEMO mode: generate locally
       RM.bullStats = [];
       for (let i = 0; i < NUM_BULLS; i++) {
         const stats = [];
@@ -1487,11 +1509,194 @@
         RM.bullStats.push(stats);
       }
       RM.trackType = Math.floor(Math.random() * 10);
-      RM.myBet = null;
-      RM.mockBets = {};
       // Simulate some random bets from "other players"
       for (let i = 0; i < NUM_BULLS; i++) {
         RM.mockBets[i] = Math.random() < 0.6 ? +(Math.random() * 20 + 1).toFixed(2) : 0;
+      }
+    }
+
+    async function loadLiveRaceData() {
+      try {
+        const raceId = await contract.getCurrentRaceId();
+        RM.liveRaceId = raceId;
+        const seedData = await contract.getRaceSeedData(raceId);
+        if (seedData.seeded) {
+          // Unpack 48-element flat array into 8 bulls × 6 stats
+          RM.bullStats = [];
+          for (let i = 0; i < NUM_BULLS; i++) {
+            const stats = [];
+            for (let s = 0; s < 6; s++) stats.push(Number(seedData.stats[i * 6 + s]));
+            RM.bullStats.push(stats);
+          }
+          RM.trackType = Number(seedData.trackType);
+        } else {
+          // Not seeded yet — use placeholder stats, will refresh when seeded
+          RM.bullStats = [];
+          for (let i = 0; i < NUM_BULLS; i++) {
+            RM.bullStats.push([5, 5, 5, 5, 5, 5]);
+          }
+          RM.trackType = 0;
+        }
+        // Load on-chain pool data
+        const pools = await contract.getAllBullPools(raceId);
+        RM.mockBets = {};
+        for (let i = 0; i < NUM_BULLS; i++) {
+          RM.mockBets[i] = Number(ethers.formatEther(pools[i]));
+        }
+        liveRaceDataLoaded = true;
+      } catch (e) {
+        console.error('Failed to load live race data:', e);
+        // Fallback to demo-style generation
+        RM.bullStats = [];
+        for (let i = 0; i < NUM_BULLS; i++) {
+          const stats = [];
+          for (let s = 0; s < 6; s++) stats.push(Math.floor(Math.random() * 10) + 1);
+          RM.bullStats.push(stats);
+        }
+        RM.trackType = Math.floor(Math.random() * 10);
+        liveRaceDataLoaded = true;
+      }
+    }
+
+    // ======== LIVE MODE TIMING ========
+
+    /** Compute current race phase from UTC time (mirrors contract logic exactly) */
+    function getLiveState() {
+      const now = Math.floor(Date.now() / 1000);
+      if (now < liveEpoch) return { raceId: 0, contractPhase: 'BETTING', remaining: 0, elapsed: 0 };
+      const raceId = Math.floor((now - liveEpoch) / liveCycleDuration);
+      const raceStart = liveEpoch + raceId * liveCycleDuration;
+      const elapsed = now - raceStart;
+
+      let contractPhase, remaining;
+      if (elapsed < liveBettingDuration) {
+        contractPhase = 'BETTING';
+        remaining = liveBettingDuration - elapsed;
+      } else if (elapsed < liveSwitchingEnd) {
+        contractPhase = 'SWITCHING';
+        remaining = liveSwitchingEnd - elapsed;
+      } else {
+        contractPhase = 'CLOSED';
+        remaining = liveCycleDuration - elapsed;
+      }
+
+      return { raceId, contractPhase, remaining, elapsed };
+    }
+
+    /** Load contract timing config once */
+    async function loadLiveConfig() {
+      if (!contract || liveConfigLoaded) return;
+      try {
+        const [ep, cycle, betting, switching] = await Promise.all([
+          contract.epoch(),
+          contract.cycleDuration(),
+          contract.bettingDuration(),
+          contract.switchingEnd(),
+        ]);
+        liveEpoch = Number(ep);
+        liveCycleDuration = Number(cycle);
+        liveBettingDuration = Number(betting);
+        liveSwitchingEnd = Number(switching);
+        liveConfigLoaded = true;
+        console.log(`Live config: epoch=${liveEpoch}, cycle=${liveCycleDuration}s, betting=${liveBettingDuration}s, switchEnd=${liveSwitchingEnd}s`);
+      } catch (e) {
+        console.error('Failed to load live config:', e);
+      }
+    }
+
+    /** Sync frontend to correct on-chain phase (called when entering LIVE mode) */
+    async function syncToLivePhase() {
+      if (DEMO_MODE || !contract) return;
+
+      await loadLiveConfig();
+      const live = getLiveState();
+      RM.liveRaceId = live.raceId;
+      RM.raceId = live.raceId;
+
+      document.querySelector('#title-bar .title-text').textContent = `> MOONAD // LIVE RACE #${RM.raceId}`;
+
+      // Load on-chain data for this race
+      RM.myBet = null;
+      RM.mockBets = {};
+      await loadLiveRaceData();
+      liveRaceDataLoaded = true;
+
+      // Load user's existing bet if wallet connected
+      if (userAddress) {
+        try {
+          const bet = await contract.getUserBet(live.raceId, userAddress);
+          if (bet.exists) {
+            RM.myBet = { bullIndex: Number(bet.bullId), amount: Number(ethers.formatEther(bet.amount)) };
+          }
+        } catch (e) {}
+      }
+
+      // Map contract phase to correct frontend phase (skip animations for mid-cycle join)
+      switch (live.contractPhase) {
+        case 'BETTING':
+          setPhase('betting');
+          break;
+        case 'SWITCHING':
+          setPhase('switching');
+          break;
+        case 'CLOSED':
+          try {
+            const info = await contract.getRaceInfo(live.raceId);
+            if (info.resolved) {
+              const results = await contract.getRaceResults(live.raceId);
+              RM.finishOrder = Array.from(results.finishOrder).map(Number);
+              // Build scores indexed by bull ID (higher = better)
+              RM.scores = new Array(NUM_BULLS).fill(0);
+              for (let r = 0; r < NUM_BULLS; r++) RM.scores[RM.finishOrder[r]] = NUM_BULLS - r;
+              setPhase('results');
+            } else if (live.remaining > 200) {
+              computeRaceResults();
+              setPhase('racing');
+            } else {
+              computeRaceResults();
+              setPhase('results');
+            }
+          } catch (e) {
+            computeRaceResults();
+            setPhase('results');
+          }
+          break;
+      }
+
+      startLivePolling();
+    }
+
+    /** Poll contract for pool/bet data updates */
+    function startLivePolling() {
+      stopLivePolling();
+      livePollInterval = setInterval(async () => {
+        if (DEMO_MODE || !contract) { stopLivePolling(); return; }
+        try {
+          const live = getLiveState();
+          if (live.raceId !== RM.liveRaceId) return; // Race changed, phase transition handles it
+          const pools = await contract.getAllBullPools(live.raceId);
+          RM.mockBets = {};
+          for (let i = 0; i < NUM_BULLS; i++) {
+            RM.mockBets[i] = Number(ethers.formatEther(pools[i]));
+          }
+          if (userAddress) {
+            const bet = await contract.getUserBet(live.raceId, userAddress);
+            if (bet.exists) {
+              RM.myBet = { bullIndex: Number(bet.bullId), amount: Number(ethers.formatEther(bet.amount)) };
+            }
+          }
+          updatePoolDisplay();
+          if (RM.phase === 'betting' || RM.phase === 'switching') renderBullCards();
+        } catch (e) {
+          console.error('Live poll error:', e);
+        }
+      }, 10000);
+    }
+
+    function stopLivePolling() {
+      if (livePollInterval) {
+        clearInterval(livePollInterval);
+        livePollInterval = null;
       }
     }
 
@@ -1922,6 +2127,9 @@
         demoLabel.classList.remove('active');
         liveLabel.classList.add('active', 'live-active');
         SFX.walletConnect();
+        // Sync to on-chain timing — will set correct phase, raceId, and data
+        syncToLivePhase();
+        return; // syncToLivePhase handles everything
       } else {
         // Switch to DEMO
         DEMO_MODE = true;
@@ -1930,21 +2138,21 @@
         liveLabel.classList.remove('active', 'live-active');
         demoLabel.classList.add('active');
         SFX.click();
+        stopLivePolling();
       }
 
-      // Reset race state for new mode
+      // Reset race state for DEMO mode
       RM.myBet = null;
       RM.mockBets = {};
       RM.switchMode = false;
       RM.mockWinnings = 0;
-      if (DEMO_MODE) RM.mockBalance = 50.0;
+      RM.mockBalance = 50.0;
       updateBalanceDisplay();
       updateClaimBanner();
-      renderBullCards();
 
-      // Update title
-      const modeTag = DEMO_MODE ? 'DEMO' : 'LIVE';
-      document.querySelector('#title-bar .title-text').textContent = `> MOONAD // ${modeTag} RACE #${RM.raceId}`;
+      // Restart DEMO cycle
+      cleanupRace();
+      setPhase('waiting');
     };
 
     window.claimWinnings = function() {
@@ -2538,8 +2746,17 @@
           ybp.classList.remove('visible');
           document.getElementById('winner').style.display = 'none';
           // Generate data
-          generateRaceData();
-          RM.raceId++;
+          if (DEMO_MODE) {
+            generateRaceData();
+            RM.raceId++;
+          } else {
+            // LIVE mode: set raceId from UTC, load on-chain data async
+            const live = getLiveState();
+            RM.raceId = live.raceId;
+            RM.liveRaceId = live.raceId;
+            liveRaceDataLoaded = false;
+            generateRaceData(); // kicks off loadLiveRaceData() async
+          }
           const mTag = DEMO_MODE ? 'DEMO' : 'LIVE';
           document.querySelector('#title-bar .title-text').textContent = `> MOONAD // ${mTag} RACE #${RM.raceId}`;
           break;
@@ -2624,9 +2841,34 @@
     }
 
     function getPhaseTimeRemaining() {
-      const elapsed = clock.getElapsedTime() - RM.phaseStart;
-      const duration = PHASE_TIMING[RM.phase] || 999;
-      return Math.max(0, duration - elapsed);
+      if (DEMO_MODE) {
+        const elapsed = clock.getElapsedTime() - RM.phaseStart;
+        const duration = PHASE_TIMING[RM.phase] || 999;
+        return Math.max(0, duration - elapsed);
+      }
+      // LIVE mode: compute from UTC (mirrors contract timing exactly)
+      const live = getLiveState();
+      switch (RM.phase) {
+        case 'waiting':
+          // Brief local loading phase (6s max)
+          return Math.max(0, 6 - (clock.getElapsedTime() - RM.phaseStart));
+        case 'betting':
+          // Counts down to end of contract BETTING phase
+          return Math.max(0, liveBettingDuration - live.elapsed);
+        case 'revealing':
+          // Brief local track-reveal animation (3s)
+          return Math.max(0, 3 - (clock.getElapsedTime() - RM.phaseStart));
+        case 'switching':
+          // Counts down to end of contract SWITCHING phase
+          return Math.max(0, liveSwitchingEnd - live.elapsed);
+        case 'racing':
+          return 999; // Self-terminating via animation completion
+        case 'results':
+          // Counts down to end of cycle (next race starts)
+          return Math.max(0, liveCycleDuration - live.elapsed);
+        default:
+          return 999;
+      }
     }
 
     function updatePhaseTimer() {
@@ -2634,14 +2876,23 @@
       if (RM.phase === 'waiting' || RM.phase === 'betting' || RM.phase === 'switching' || RM.phase === 'results') {
         const m = Math.floor(remaining / 60);
         const s = Math.floor(remaining % 60);
-        document.getElementById('clock-display').textContent =
-          `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        const timeStr = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        document.getElementById('clock-display').textContent = timeStr;
+        // Also update the next-race-timer in results panel
+        if (RM.phase === 'results') {
+          const nrt = document.getElementById('next-race-timer');
+          if (nrt) nrt.textContent = `> next race in ${timeStr}`;
+        }
       }
 
       // Auto-advance phases
       if (remaining <= 0) {
         switch (RM.phase) {
-          case 'waiting': setPhase('betting'); break;
+          case 'waiting':
+            // In LIVE mode, wait for on-chain data before advancing
+            if (!DEMO_MODE && !liveRaceDataLoaded) return;
+            setPhase('betting');
+            break;
           case 'betting': setPhase('revealing'); break;
           case 'revealing': setPhase('switching'); break;
           case 'switching': setPhase('racing'); break;

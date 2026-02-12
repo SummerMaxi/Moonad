@@ -3,204 +3,688 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {IEntropyV2} from "@pythnetwork/entropy-sdk-solidity/IEntropyV2.sol";
+import {IEntropyConsumer} from "@pythnetwork/entropy-sdk-solidity/IEntropyConsumer.sol";
 
-contract BullRaceBetting is ReentrancyGuard, Ownable {
+contract BullRaceBetting is ReentrancyGuard, Ownable, Pausable, IEntropyConsumer {
+    using SafeERC20 for IERC20;
 
     // ======== CONSTANTS ========
     uint256 public constant HOUSE_RAKE_BPS = 1000; // 10%
     uint256 public constant SWITCH_FEE_BPS = 500;  // 5%
     uint256 private constant BPS_BASE = 10000;
 
+    // Track multipliers: 10 track types × 6 stats (SPD, STA, ACC, STR, AGI, TMP)
+    // Values match the frontend TRACK_MULTIPLIERS exactly.
+    int8[6][10] private TRACK_MULTIPLIERS = [
+        [int8(10),  1,  9,  1,  2,  4],   // Flat Sprint
+        [int8( 5), 10,  0,  3,  1, -3],   // Endurance
+        [int8(-4),  6, -2, 10,  3, -3],   // Mud Pit
+        [int8(-2),  2,  3,  1, 10, -5],   // Rocky Canyon
+        [int8(-2),  8,  2,  9,  1,  0],   // Steep Incline
+        [int8( 8),  1,  1,  5,  5, -6],   // Downhill Rush
+        [int8( 1),  2,  8, -3, 10,  3],   // Zigzag
+        [int8( 1),  5,  1,  2,  6, -8],   // Thunderstorm
+        [int8(-5),  7, -3,  9,  2, -2],   // Sand Dunes
+        [int8( 3),  5,  2,  1,  6, -7]    // Night Trail
+    ];
+
     // ======== ENUMS ========
-    enum RaceState { BETTING, CLOSED, RESOLVED }
+    enum RacePhase { BETTING, SWITCHING, CLOSED, RESOLVED, CANCELLED }
 
     // ======== STRUCTS ========
-    struct Race {
-        RaceState state;
-        uint8 numBulls;
-        uint8 winningBullId;
+    struct RaceConfig {
+        address token;           // address(0) = native MON
+        uint8   numBulls;
+        uint8   trackType;
+        bool    resolved;
+        bool    cancelled;
+        bool    seeded;
+        uint8   payoutBullId;   // highest finisher with bets
         uint256 totalPool;
         uint256 rakeAccumulated;
-        mapping(uint8 => uint256) bullPools;
-        mapping(address => uint8) userBullId;
-        mapping(address => uint256) userBetAmount;
-        mapping(address => bool) hasBet;
-        mapping(address => bool) hasClaimed;
+        bytes32 seed;           // Pyth Entropy randomness (stored for transparency)
+        uint8[48] bullStats;    // 6 stats × 8 bulls, flattened
+    }
+
+    struct RaceResults {
+        uint8[8]   finishOrder;  // bull IDs in finish order (index 0 = winner)
+        uint256[8] finishTimes;  // milliseconds
+        uint32     resolvedAt;   // timestamp
+    }
+
+    struct UserBet {
+        uint8   bullId;
+        bool    exists;
+        bool    claimed;
+        uint128 amount;
     }
 
     // ======== STATE ========
-    uint256 public nextRaceId;
-    uint256 public houseRake;
-    mapping(uint256 => Race) private races;
+    uint256 public epoch;              // UTC 00:00 of start day
+    uint256 public cycleDuration = 900;      // 15 minutes
+    uint256 public bettingDuration = 480;    // 0:00–8:00
+    uint256 public switchingEnd = 660;       // switching ends at 11:00
+    uint8   public defaultNumBulls = 8;
+    address public defaultRaceToken;         // address(0) = native MON
+
+    // Pyth Entropy
+    IEntropyV2 public immutable entropy;
+
+    // VRF request tracking: sequenceNumber → raceId
+    mapping(uint64 => uint256) public vrfRequestToRace;
+
+    // Token allowlist: token address => minBetAmount (0 means not accepted)
+    mapping(address => uint256) public minBetAmount;
+    mapping(address => bool) public acceptedTokens;
+    address[] private _acceptedTokenList;
+
+    // Per-token rake accumulation
+    mapping(address => uint256) public rakeBalance;
+
+    // Race data
+    mapping(uint256 => RaceConfig) private _races;
+    mapping(uint256 => RaceResults) private _results;
+    mapping(uint256 => mapping(uint8 => uint256)) public bullPools;
+    mapping(uint256 => mapping(address => UserBet)) private _userBets;
+
+    // Track which races have been initialized (first bet or seed request)
+    mapping(uint256 => bool) public raceInitialized;
 
     // ======== EVENTS ========
-    event RaceCreated(uint256 indexed raceId, uint8 numBulls);
-    event BetPlaced(uint256 indexed raceId, address indexed bettor, uint8 bullId, uint256 amount);
+    event BetPlaced(uint256 indexed raceId, address indexed bettor, uint8 bullId, address token, uint256 amount);
     event BetSwitched(uint256 indexed raceId, address indexed bettor, uint8 oldBullId, uint8 newBullId, uint256 fee);
-    event BettingClosed(uint256 indexed raceId);
-    event RaceResolved(uint256 indexed raceId, uint8 winningBullId, uint256 totalPool);
+    event RaceSeedRequested(uint256 indexed raceId, uint64 sequenceNumber);
+    event RaceSeeded(uint256 indexed raceId, uint8 trackType, bytes32 seed);
+    event RaceResolved(uint256 indexed raceId, uint8[8] finishOrder, uint256[8] finishTimes, uint256 totalPool);
     event WinningsClaimed(uint256 indexed raceId, address indexed bettor, uint256 payout);
-    event EmergencyRefund(uint256 indexed raceId, address indexed bettor, uint256 amount);
-    event RakeWithdrawn(address indexed to, uint256 amount);
+    event RefundClaimed(uint256 indexed raceId, address indexed bettor, uint256 amount);
+    event RaceCancelled(uint256 indexed raceId);
+    event RakeWithdrawn(address indexed token, address indexed to, uint256 amount);
+    event TokenAdded(address indexed token, uint256 minBet);
+    event TokenRemoved(address indexed token);
+    event TimingConfigUpdated(uint256 cycle, uint256 betting, uint256 switchingEnd);
 
     // ======== CONSTRUCTOR ========
-    constructor() Ownable(msg.sender) {}
-
-    // ======== OWNER FUNCTIONS ========
-
-    function createRace(uint8 numBulls) external onlyOwner returns (uint256 raceId) {
-        require(numBulls >= 2 && numBulls <= 16, "Invalid bull count");
-        raceId = nextRaceId++;
-        Race storage race = races[raceId];
-        race.state = RaceState.BETTING;
-        race.numBulls = numBulls;
-        emit RaceCreated(raceId, numBulls);
+    constructor(uint256 _epoch, address _entropy) Ownable(msg.sender) {
+        require(_epoch <= block.timestamp, "Epoch must be in the past");
+        require(_entropy != address(0), "Zero entropy address");
+        epoch = _epoch;
+        entropy = IEntropyV2(_entropy);
     }
 
-    function closeBetting(uint256 raceId) external onlyOwner {
-        Race storage race = races[raceId];
-        require(race.state == RaceState.BETTING, "Not in betting state");
-        race.state = RaceState.CLOSED;
-        emit BettingClosed(raceId);
+    // ======== PYTH ENTROPY VRF ========
+
+    /// @notice Returns the Pyth Entropy contract address (required by IEntropyConsumer)
+    function getEntropy() internal view override returns (address) {
+        return address(entropy);
     }
 
-    function resolveRace(uint256 raceId, uint8 winningBullId) external onlyOwner {
-        Race storage race = races[raceId];
-        require(race.state == RaceState.CLOSED, "Not in closed state");
-        require(winningBullId < race.numBulls, "Invalid bull ID");
-        race.winningBullId = winningBullId;
-        // Deduct house rake from total pool
-        uint256 rake = (race.totalPool * HOUSE_RAKE_BPS) / BPS_BASE;
-        race.rakeAccumulated = rake;
-        houseRake += rake;
-        race.state = RaceState.RESOLVED;
-        emit RaceResolved(raceId, winningBullId, race.totalPool);
-    }
+    /// @notice Request VRF randomness for a race. Anyone can call. Caller pays Entropy fee.
+    /// @param raceId The race to seed
+    function requestRaceSeed(uint256 raceId) external payable whenNotPaused {
+        RaceConfig storage race = _races[raceId];
 
-    function emergencyRefund(uint256 raceId, address[] calldata bettors) external onlyOwner {
-        Race storage race = races[raceId];
-        require(race.state != RaceState.RESOLVED, "Already resolved");
-        for (uint256 i = 0; i < bettors.length; i++) {
-            address bettor = bettors[i];
-            if (race.hasBet[bettor] && !race.hasClaimed[bettor]) {
-                uint256 amount = race.userBetAmount[bettor];
-                race.hasClaimed[bettor] = true;
-                race.bullPools[race.userBullId[bettor]] -= amount;
-                race.totalPool -= amount;
-                (bool ok, ) = payable(bettor).call{value: amount}("");
-                require(ok, "Refund transfer failed");
-                emit EmergencyRefund(raceId, bettor, amount);
-            }
+        RacePhase phase = getRacePhase(raceId);
+        require(
+            phase == RacePhase.BETTING || phase == RacePhase.SWITCHING,
+            "Too late to seed"
+        );
+        require(!race.seeded, "Already seeded");
+
+        // Initialize if not yet
+        if (!raceInitialized[raceId]) {
+            _initRace(raceId, defaultRaceToken);
         }
+
+        // Get Entropy fee and request randomness
+        uint128 fee = entropy.getFeeV2();
+        require(msg.value >= fee, "Insufficient Entropy fee");
+
+        uint64 sequenceNumber = entropy.requestV2{value: fee}();
+        vrfRequestToRace[sequenceNumber] = raceId;
+
+        // Refund excess
+        if (msg.value > fee) {
+            (bool ok, ) = payable(msg.sender).call{value: msg.value - fee}("");
+            require(ok, "Refund failed");
+        }
+
+        emit RaceSeedRequested(raceId, sequenceNumber);
     }
 
-    function withdrawRake(address to) external onlyOwner {
-        require(to != address(0), "Zero address");
-        uint256 amount = houseRake;
-        require(amount > 0, "No rake to withdraw");
-        houseRake = 0;
-        (bool ok, ) = payable(to).call{value: amount}("");
-        require(ok, "Rake transfer failed");
-        emit RakeWithdrawn(to, amount);
+    /// @notice Pyth Entropy callback — derives stats + trackType on-chain from randomness.
+    ///         Called automatically by Pyth keeper network.
+    function entropyCallback(
+        uint64 sequenceNumber,
+        address /* provider */,
+        bytes32 randomNumber
+    ) internal override {
+        uint256 raceId = vrfRequestToRace[sequenceNumber];
+        RaceConfig storage race = _races[raceId];
+
+        // Guard: don't overwrite if already seeded
+        if (race.seeded) return;
+
+        // Initialize if not yet (edge case: seed requested before any bet)
+        if (!raceInitialized[raceId]) {
+            _initRace(raceId, defaultRaceToken);
+        }
+
+        uint256 randomness = uint256(randomNumber);
+
+        // Store raw randomness for transparency
+        race.seed = randomNumber;
+
+        // Derive trackType
+        race.trackType = uint8(randomness % 10);
+
+        // Derive 48 bull stats (8 bulls × 6 stats each), values 1-10
+        for (uint256 i = 0; i < 48; i++) {
+            race.bullStats[i] = uint8(
+                (uint256(keccak256(abi.encode(randomness, i))) % 10) + 1
+            );
+        }
+
+        race.seeded = true;
+
+        emit RaceSeeded(raceId, race.trackType, race.seed);
     }
 
-    // ======== PUBLIC FUNCTIONS ========
+    /// @notice View: get the current Pyth Entropy fee for seeding a race
+    function getEntropyFee() external view returns (uint128) {
+        return entropy.getFeeV2();
+    }
 
-    function placeBet(uint256 raceId, uint8 bullId) external payable nonReentrant {
-        Race storage race = races[raceId];
-        require(race.state == RaceState.BETTING, "Betting not open");
+    // ====================================================================
+    //                       TIME / PHASE HELPERS
+    // ====================================================================
+
+    function getCurrentRaceId() public view returns (uint256) {
+        require(block.timestamp >= epoch, "Before epoch");
+        return (block.timestamp - epoch) / cycleDuration;
+    }
+
+    function getRaceStartTime(uint256 raceId) public view returns (uint256) {
+        return epoch + raceId * cycleDuration;
+    }
+
+    function getRacePhase(uint256 raceId) public view returns (RacePhase) {
+        RaceConfig storage race = _races[raceId];
+        if (race.cancelled) return RacePhase.CANCELLED;
+        if (race.resolved) return RacePhase.RESOLVED;
+
+        uint256 raceStart = getRaceStartTime(raceId);
+        if (block.timestamp < raceStart) return RacePhase.BETTING; // future race
+
+        uint256 elapsed = block.timestamp - raceStart;
+
+        if (elapsed < bettingDuration) return RacePhase.BETTING;
+        if (elapsed < switchingEnd) return RacePhase.SWITCHING;
+        return RacePhase.CLOSED;
+    }
+
+    function isBettingOpen(uint256 raceId) public view returns (bool) {
+        return getRacePhase(raceId) == RacePhase.BETTING;
+    }
+
+    function isSwitchingOpen(uint256 raceId) public view returns (bool) {
+        RacePhase phase = getRacePhase(raceId);
+        return phase == RacePhase.BETTING || phase == RacePhase.SWITCHING;
+    }
+
+    function getPhaseTimeRemaining(uint256 raceId) public view returns (uint256) {
+        RaceConfig storage race = _races[raceId];
+        if (race.cancelled || race.resolved) return 0;
+
+        uint256 raceStart = getRaceStartTime(raceId);
+        if (block.timestamp < raceStart) return raceStart - block.timestamp + bettingDuration;
+
+        uint256 elapsed = block.timestamp - raceStart;
+
+        if (elapsed < bettingDuration) {
+            return bettingDuration - elapsed;
+        } else if (elapsed < switchingEnd) {
+            return switchingEnd - elapsed;
+        } else if (elapsed < cycleDuration) {
+            return cycleDuration - elapsed;
+        }
+        return 0;
+    }
+
+    // ====================================================================
+    //                            BETTING
+    // ====================================================================
+
+    function placeBet(
+        uint256 raceId,
+        uint8 bullId,
+        address token,
+        uint256 amount
+    ) external payable nonReentrant whenNotPaused {
+        require(isBettingOpen(raceId), "Betting not open");
+
+        RaceConfig storage race = _races[raceId];
+
+        // Initialize race on first interaction
+        if (!raceInitialized[raceId]) {
+            _initRace(raceId, token);
+        }
+
+        require(token == race.token, "Wrong token for this race");
+        require(acceptedTokens[token], "Token not accepted");
         require(bullId < race.numBulls, "Invalid bull ID");
-        require(!race.hasBet[msg.sender], "Already bet");
-        require(msg.value > 0, "Bet must be > 0");
 
-        race.hasBet[msg.sender] = true;
-        race.userBullId[msg.sender] = bullId;
-        race.userBetAmount[msg.sender] = msg.value;
-        race.bullPools[bullId] += msg.value;
-        race.totalPool += msg.value;
+        UserBet storage bet = _userBets[raceId][msg.sender];
+        require(!bet.exists, "Already bet");
 
-        emit BetPlaced(raceId, msg.sender, bullId, msg.value);
+        // Handle payment
+        uint256 betAmount = _collectPayment(token, amount);
+        require(betAmount >= minBetAmount[token], "Below minimum bet");
+
+        // Store bet
+        bet.bullId = bullId;
+        bet.exists = true;
+        bet.amount = uint128(betAmount);
+
+        bullPools[raceId][bullId] += betAmount;
+        race.totalPool += betAmount;
+
+        emit BetPlaced(raceId, msg.sender, bullId, token, betAmount);
     }
 
-    function switchBet(uint256 raceId, uint8 newBullId) external nonReentrant {
-        Race storage race = races[raceId];
-        require(race.state == RaceState.BETTING, "Betting not open");
-        require(race.hasBet[msg.sender], "No existing bet");
+    function switchBet(uint256 raceId, uint8 newBullId) external nonReentrant whenNotPaused {
+        require(isSwitchingOpen(raceId), "Switching not open");
+
+        RaceConfig storage race = _races[raceId];
+        UserBet storage bet = _userBets[raceId][msg.sender];
+
+        require(bet.exists, "No existing bet");
         require(newBullId < race.numBulls, "Invalid bull ID");
+        require(newBullId != bet.bullId, "Same bull");
 
-        uint8 oldBullId = race.userBullId[msg.sender];
-        require(newBullId != oldBullId, "Same bull");
-
-        uint256 oldAmount = race.userBetAmount[msg.sender];
+        uint8 oldBullId = bet.bullId;
+        uint256 oldAmount = uint256(bet.amount);
         uint256 fee = (oldAmount * SWITCH_FEE_BPS) / BPS_BASE;
         uint256 newAmount = oldAmount - fee;
 
         // Update pools
-        race.bullPools[oldBullId] -= oldAmount;
-        race.bullPools[newBullId] += newAmount;
+        bullPools[raceId][oldBullId] -= oldAmount;
+        bullPools[raceId][newBullId] += newAmount;
         race.totalPool -= fee;
 
-        // Update user state
-        race.userBullId[msg.sender] = newBullId;
-        race.userBetAmount[msg.sender] = newAmount;
-
         // Fee goes to house rake
-        houseRake += fee;
+        rakeBalance[race.token] += fee;
+        race.rakeAccumulated += fee;
+
+        // Update user bet
+        bet.bullId = newBullId;
+        bet.amount = uint128(newAmount);
 
         emit BetSwitched(raceId, msg.sender, oldBullId, newBullId, fee);
     }
 
-    function claimWinnings(uint256 raceId) external nonReentrant {
-        Race storage race = races[raceId];
-        require(race.state == RaceState.RESOLVED, "Not resolved");
-        require(race.hasBet[msg.sender], "No bet placed");
-        require(!race.hasClaimed[msg.sender], "Already claimed");
-        require(race.userBullId[msg.sender] == race.winningBullId, "Not a winner");
+    // ====================================================================
+    //                            CLAIMS
+    // ====================================================================
 
-        race.hasClaimed[msg.sender] = true;
+    function claimWinnings(uint256 raceId) external nonReentrant {
+        RaceConfig storage race = _races[raceId];
+        require(race.resolved, "Not resolved");
+
+        UserBet storage bet = _userBets[raceId][msg.sender];
+        require(bet.exists, "No bet placed");
+        require(!bet.claimed, "Already claimed");
+        require(bet.bullId == race.payoutBullId, "Not a winner");
+
+        bet.claimed = true;
 
         uint256 netPool = race.totalPool - race.rakeAccumulated;
-        uint256 userBet = race.userBetAmount[msg.sender];
-        uint256 winningPool = race.bullPools[race.winningBullId];
+        uint256 userBet = uint256(bet.amount);
+        uint256 winningPool = bullPools[raceId][race.payoutBullId];
         uint256 payout = (netPool * userBet) / winningPool;
 
-        (bool ok, ) = payable(msg.sender).call{value: payout}("");
-        require(ok, "Claim transfer failed");
+        _sendPayment(race.token, msg.sender, payout);
 
         emit WinningsClaimed(raceId, msg.sender, payout);
     }
 
-    // ======== VIEW FUNCTIONS ========
+    function claimRefund(uint256 raceId) external nonReentrant {
+        RaceConfig storage race = _races[raceId];
+        require(race.cancelled, "Race not cancelled");
+
+        UserBet storage bet = _userBets[raceId][msg.sender];
+        require(bet.exists, "No bet placed");
+        require(!bet.claimed, "Already claimed");
+
+        bet.claimed = true;
+
+        uint256 refundAmount = uint256(bet.amount);
+        _sendPayment(race.token, msg.sender, refundAmount);
+
+        emit RefundClaimed(raceId, msg.sender, refundAmount);
+    }
+
+    // ====================================================================
+    //                    PERMISSIONLESS RACE RESOLUTION
+    // ====================================================================
+
+    /// @notice Resolve a race on-chain. Anyone can call — results are deterministic from VRF seed.
+    /// @param raceId The race to resolve
+    function resolveRace(uint256 raceId) external nonReentrant {
+        RaceConfig storage race = _races[raceId];
+
+        require(getRacePhase(raceId) == RacePhase.CLOSED, "Race not in closed phase");
+        require(!race.resolved, "Already resolved");
+        require(!race.cancelled, "Race cancelled");
+        require(race.seeded, "Race not seeded");
+
+        uint8 numBulls = race.numBulls;
+        bytes32 seed = race.seed;
+
+        // ---- Compute scores for each bull ----
+        int256[8] memory scores;
+        for (uint8 i = 0; i < numBulls; i++) {
+            int256 score = 0;
+            int8[6] memory mults = TRACK_MULTIPLIERS[race.trackType];
+
+            for (uint8 j = 0; j < 6; j++) {
+                int256 stat = int256(uint256(race.bullStats[i * 6 + j]));
+                if (j == 5) {
+                    // Temper: offset by -5 so temper 5 is neutral
+                    score += (stat - 5) * int256(mults[j]);
+                } else {
+                    score += stat * int256(mults[j]);
+                }
+            }
+
+            // Random variance from seed (0-19)
+            uint256 bonus = uint256(keccak256(abi.encode(seed, i))) % 20;
+            score += int256(bonus);
+
+            scores[i] = score;
+        }
+
+        // ---- Sort bulls by score descending (insertion sort, max 8 elements) ----
+        uint8[8] memory finishOrder;
+        for (uint8 i = 0; i < numBulls; i++) {
+            finishOrder[i] = i;
+        }
+
+        for (uint8 i = 1; i < numBulls; i++) {
+            uint8 key = finishOrder[i];
+            int256 keyScore = scores[key];
+            uint8 j = i;
+            while (j > 0 && scores[finishOrder[j - 1]] < keyScore) {
+                finishOrder[j] = finishOrder[j - 1];
+                j--;
+            }
+            finishOrder[j] = key;
+        }
+
+        // ---- Derive cosmetic finish times from scores ----
+        uint256[8] memory finishTimes;
+        int256 topScore = scores[finishOrder[0]];
+        for (uint8 i = 0; i < numBulls; i++) {
+            int256 gap = topScore - scores[finishOrder[i]];
+            // Base 25000ms + gap * 200ms
+            finishTimes[i] = 25000 + uint256(gap) * 200;
+        }
+
+        // ---- Calculate house rake ----
+        uint256 totalRake = (race.totalPool * HOUSE_RAKE_BPS) / BPS_BASE;
+        uint256 additionalRake = 0;
+        if (totalRake > race.rakeAccumulated) {
+            additionalRake = totalRake - race.rakeAccumulated;
+        }
+        race.rakeAccumulated = totalRake;
+        rakeBalance[race.token] += additionalRake;
+
+        // ---- Find payout bull: first finisher with bets ----
+        uint8 payoutBull = 0;
+        bool found = false;
+        for (uint8 i = 0; i < numBulls; i++) {
+            if (bullPools[raceId][finishOrder[i]] > 0) {
+                payoutBull = finishOrder[i];
+                found = true;
+                break;
+            }
+        }
+
+        race.resolved = true;
+        if (found) {
+            race.payoutBullId = payoutBull;
+        }
+
+        // Store results
+        RaceResults storage results = _results[raceId];
+        results.finishOrder = finishOrder;
+        results.finishTimes = finishTimes;
+        results.resolvedAt = uint32(block.timestamp);
+
+        emit RaceResolved(raceId, finishOrder, finishTimes, race.totalPool);
+    }
+
+    // ====================================================================
+    //                        OWNER ADMIN FUNCTIONS
+    // ====================================================================
+
+    function cancelRace(uint256 raceId) external onlyOwner {
+        RaceConfig storage race = _races[raceId];
+        require(!race.resolved, "Already resolved");
+        require(!race.cancelled, "Already cancelled");
+
+        race.cancelled = true;
+
+        // Refund any switch-fee rake accumulated for this race
+        if (race.rakeAccumulated > 0 && rakeBalance[race.token] >= race.rakeAccumulated) {
+            rakeBalance[race.token] -= race.rakeAccumulated;
+            race.totalPool += race.rakeAccumulated;
+            race.rakeAccumulated = 0;
+        }
+
+        emit RaceCancelled(raceId);
+    }
+
+    function setEpoch(uint256 _epoch) external onlyOwner {
+        require(_epoch <= block.timestamp, "Epoch must be in the past");
+        epoch = _epoch;
+    }
+
+    function setTimingConfig(
+        uint256 _cycleDuration,
+        uint256 _bettingDuration,
+        uint256 _switchingEnd
+    ) external onlyOwner {
+        require(_bettingDuration < _switchingEnd, "Betting must end before switching");
+        require(_switchingEnd < _cycleDuration, "Switching must end before cycle");
+        require(_cycleDuration > 0, "Cycle must be > 0");
+
+        cycleDuration = _cycleDuration;
+        bettingDuration = _bettingDuration;
+        switchingEnd = _switchingEnd;
+
+        emit TimingConfigUpdated(_cycleDuration, _bettingDuration, _switchingEnd);
+    }
+
+    function setNumBulls(uint8 n) external onlyOwner {
+        require(n >= 2 && n <= 16, "Invalid bull count");
+        defaultNumBulls = n;
+    }
+
+    function addAcceptedToken(address token, uint256 _minBet) external onlyOwner {
+        if (!acceptedTokens[token]) {
+            acceptedTokens[token] = true;
+            _acceptedTokenList.push(token);
+        }
+        minBetAmount[token] = _minBet;
+        emit TokenAdded(token, _minBet);
+    }
+
+    function removeAcceptedToken(address token) external onlyOwner {
+        require(acceptedTokens[token], "Token not accepted");
+        acceptedTokens[token] = false;
+        for (uint256 i = 0; i < _acceptedTokenList.length; i++) {
+            if (_acceptedTokenList[i] == token) {
+                _acceptedTokenList[i] = _acceptedTokenList[_acceptedTokenList.length - 1];
+                _acceptedTokenList.pop();
+                break;
+            }
+        }
+        emit TokenRemoved(token);
+    }
+
+    function setMinBetAmount(address token, uint256 _minBet) external onlyOwner {
+        require(acceptedTokens[token], "Token not accepted");
+        minBetAmount[token] = _minBet;
+    }
+
+    function setDefaultRaceToken(address token) external onlyOwner {
+        require(acceptedTokens[token], "Token not accepted");
+        defaultRaceToken = token;
+    }
+
+    function withdrawRake(address token, address to) external onlyOwner {
+        require(to != address(0), "Zero address");
+        uint256 amount = rakeBalance[token];
+        require(amount > 0, "No rake to withdraw");
+        rakeBalance[token] = 0;
+
+        _sendPayment(token, to, amount);
+
+        emit RakeWithdrawn(token, to, amount);
+    }
+
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    function unpause() external onlyOwner {
+        _unpause();
+    }
+
+    // ====================================================================
+    //                         VIEW FUNCTIONS
+    // ====================================================================
 
     function getRaceInfo(uint256 raceId) external view returns (
-        RaceState state,
+        RacePhase phase,
+        address token,
+        uint256 totalPool,
         uint8 numBulls,
-        uint8 winningBullId,
-        uint256 totalPool
+        bool resolved,
+        bool cancelled
     ) {
-        Race storage race = races[raceId];
-        return (race.state, race.numBulls, race.winningBullId, race.totalPool);
+        RaceConfig storage race = _races[raceId];
+        return (
+            getRacePhase(raceId),
+            race.token,
+            race.totalPool,
+            race.numBulls,
+            race.resolved,
+            race.cancelled
+        );
+    }
+
+    function getRaceResults(uint256 raceId) external view returns (
+        uint8[8] memory finishOrder,
+        uint256[8] memory finishTimes,
+        uint32 resolvedAt
+    ) {
+        RaceResults storage results = _results[raceId];
+        return (results.finishOrder, results.finishTimes, results.resolvedAt);
+    }
+
+    function getRaceSeedData(uint256 raceId) external view returns (
+        uint8[48] memory stats,
+        uint8 trackType,
+        bytes32 seed,
+        bool seeded
+    ) {
+        RaceConfig storage race = _races[raceId];
+        return (race.bullStats, race.trackType, race.seed, race.seeded);
     }
 
     function getBullPool(uint256 raceId, uint8 bullId) external view returns (uint256) {
-        return races[raceId].bullPools[bullId];
+        return bullPools[raceId][bullId];
+    }
+
+    function getAllBullPools(uint256 raceId) external view returns (uint256[8] memory pools) {
+        for (uint8 i = 0; i < 8; i++) {
+            pools[i] = bullPools[raceId][i];
+        }
     }
 
     function getUserBet(uint256 raceId, address user) external view returns (
-        bool hasBet,
+        bool exists,
         uint8 bullId,
         uint256 amount,
         bool claimed
     ) {
-        Race storage race = races[raceId];
-        return (race.hasBet[user], race.userBullId[user], race.userBetAmount[user], race.hasClaimed[user]);
+        UserBet storage bet = _userBets[raceId][user];
+        return (bet.exists, bet.bullId, uint256(bet.amount), bet.claimed);
     }
 
-    function getPotentialPayout(uint256 raceId, uint8 bullId, uint256 betAmount) external view returns (uint256) {
-        Race storage race = races[raceId];
-        uint256 newTotal = race.totalPool + betAmount;
-        uint256 newBullPool = race.bullPools[bullId] + betAmount;
+    function getPotentialPayout(
+        uint256 raceId,
+        uint8 bullId,
+        uint256 amount
+    ) external view returns (uint256) {
+        RaceConfig storage race = _races[raceId];
+        uint256 newTotal = race.totalPool + amount;
+        uint256 newBullPool = bullPools[raceId][bullId] + amount;
         uint256 netPool = (newTotal * (BPS_BASE - HOUSE_RAKE_BPS)) / BPS_BASE;
-        return (netPool * betAmount) / newBullPool;
+        if (newBullPool == 0) return 0;
+        return (netPool * amount) / newBullPool;
     }
+
+    function getAcceptedTokens() external view returns (address[] memory) {
+        return _acceptedTokenList;
+    }
+
+    /// @notice Get the track multipliers for a given track type
+    function getTrackMultipliers(uint8 trackType) external view returns (int8[6] memory) {
+        require(trackType < 10, "Invalid track type");
+        return TRACK_MULTIPLIERS[trackType];
+    }
+
+    // ====================================================================
+    //                         INTERNAL HELPERS
+    // ====================================================================
+
+    function _initRace(uint256 raceId, address token) internal {
+        RaceConfig storage race = _races[raceId];
+        race.token = token;
+        race.numBulls = defaultNumBulls;
+        raceInitialized[raceId] = true;
+    }
+
+    function _collectPayment(address token, uint256 amount) internal returns (uint256) {
+        if (token == address(0)) {
+            // Native MON
+            require(msg.value > 0, "No value sent");
+            return msg.value;
+        } else {
+            // ERC20
+            require(msg.value == 0, "Do not send MON with ERC20 bet");
+            require(amount > 0, "Amount must be > 0");
+            IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
+            return amount;
+        }
+    }
+
+    function _sendPayment(address token, address to, uint256 amount) internal {
+        if (token == address(0)) {
+            (bool ok, ) = payable(to).call{value: amount}("");
+            require(ok, "Native transfer failed");
+        } else {
+            IERC20(token).safeTransfer(to, amount);
+        }
+    }
+
+    /// @notice Accept native MON for Entropy fees
+    receive() external payable {}
 }
