@@ -13,8 +13,9 @@ contract BullRaceBetting is ReentrancyGuard, Ownable, Pausable, IEntropyConsumer
     using SafeERC20 for IERC20;
 
     // ======== CONSTANTS ========
-    uint256 public constant HOUSE_RAKE_BPS = 1000; // 10%
+    uint256 public constant HOUSE_RAKE_BPS = 1000; // 10% total rake
     uint256 public constant SWITCH_FEE_BPS = 500;  // 5%
+    uint256 public constant SEEDER_RAKE_BPS = 200;  // 2% of pool goes to seeder (out of the 10%)
     uint256 private constant BPS_BASE = 10000;
 
     // Track multipliers: 10 track types × 6 stats (SPD, STA, ACC, STR, AGI, TMP)
@@ -44,6 +45,7 @@ contract BullRaceBetting is ReentrancyGuard, Ownable, Pausable, IEntropyConsumer
         bool    cancelled;
         bool    seeded;
         uint8   payoutBullId;   // highest finisher with bets
+        address seeder;          // who requested VRF seed — gets seeder reward
         uint256 totalPool;
         uint256 rakeAccumulated;
         bytes32 seed;           // Pyth Entropy randomness (stored for transparency)
@@ -85,6 +87,9 @@ contract BullRaceBetting is ReentrancyGuard, Ownable, Pausable, IEntropyConsumer
     // Per-token rake accumulation
     mapping(address => uint256) public rakeBalance;
 
+    // Seeder reward balances: seeder address => token => claimable amount
+    mapping(address => mapping(address => uint256)) public seederBalance;
+
     // Race data
     mapping(uint256 => RaceConfig) private _races;
     mapping(uint256 => RaceResults) private _results;
@@ -104,6 +109,8 @@ contract BullRaceBetting is ReentrancyGuard, Ownable, Pausable, IEntropyConsumer
     event RefundClaimed(uint256 indexed raceId, address indexed bettor, uint256 amount);
     event RaceCancelled(uint256 indexed raceId);
     event RakeWithdrawn(address indexed token, address indexed to, uint256 amount);
+    event SeederRewardCredited(uint256 indexed raceId, address indexed seeder, uint256 amount);
+    event SeederRewardClaimed(address indexed seeder, address indexed token, uint256 amount);
     event TokenAdded(address indexed token, uint256 minBet);
     event TokenRemoved(address indexed token);
     event TimingConfigUpdated(uint256 cycle, uint256 betting, uint256 switchingEnd);
@@ -138,6 +145,11 @@ contract BullRaceBetting is ReentrancyGuard, Ownable, Pausable, IEntropyConsumer
         // Initialize if not yet
         if (!raceInitialized[raceId]) {
             _initRace(raceId, defaultRaceToken);
+        }
+
+        // Record seeder (first caller gets credit)
+        if (race.seeder == address(0)) {
+            race.seeder = msg.sender;
         }
 
         // Get Entropy fee and request randomness
@@ -354,7 +366,12 @@ contract BullRaceBetting is ReentrancyGuard, Ownable, Pausable, IEntropyConsumer
 
     function claimRefund(uint256 raceId) external nonReentrant {
         RaceConfig storage race = _races[raceId];
-        require(race.cancelled, "Race not cancelled");
+        // Allow refund if cancelled OR if race ended without a seed (bettors shouldn't lose funds)
+        require(
+            race.cancelled ||
+            (getRacePhase(raceId) == RacePhase.CLOSED && !race.seeded && !race.resolved),
+            "Race not refundable"
+        );
 
         UserBet storage bet = _userBets[raceId][msg.sender];
         require(bet.exists, "No bet placed");
@@ -366,6 +383,15 @@ contract BullRaceBetting is ReentrancyGuard, Ownable, Pausable, IEntropyConsumer
         _sendPayment(race.token, msg.sender, refundAmount);
 
         emit RefundClaimed(raceId, msg.sender, refundAmount);
+    }
+
+    /// @notice Seeders claim accumulated rewards across all races they seeded
+    function claimSeederReward(address token) external nonReentrant {
+        uint256 amount = seederBalance[msg.sender][token];
+        require(amount > 0, "No seeder reward");
+        seederBalance[msg.sender][token] = 0;
+        _sendPayment(token, msg.sender, amount);
+        emit SeederRewardClaimed(msg.sender, token, amount);
     }
 
     // ====================================================================
@@ -434,14 +460,24 @@ contract BullRaceBetting is ReentrancyGuard, Ownable, Pausable, IEntropyConsumer
             finishTimes[i] = 25000 + uint256(gap) * 200;
         }
 
-        // ---- Calculate house rake ----
+        // ---- Calculate rake: 10% total, split between house (8%) and seeder (2%) ----
         uint256 totalRake = (race.totalPool * HOUSE_RAKE_BPS) / BPS_BASE;
         uint256 additionalRake = 0;
         if (totalRake > race.rakeAccumulated) {
             additionalRake = totalRake - race.rakeAccumulated;
         }
         race.rakeAccumulated = totalRake;
-        rakeBalance[race.token] += additionalRake;
+
+        // Split: seeder gets SEEDER_RAKE_BPS portion of totalPool, rest to house
+        uint256 seederCut = 0;
+        if (race.seeder != address(0) && race.totalPool > 0) {
+            seederCut = (race.totalPool * SEEDER_RAKE_BPS) / BPS_BASE;
+            // Cap seeder cut to available additional rake
+            if (seederCut > additionalRake) seederCut = additionalRake;
+            seederBalance[race.seeder][race.token] += seederCut;
+            emit SeederRewardCredited(raceId, race.seeder, seederCut);
+        }
+        rakeBalance[race.token] += (additionalRake - seederCut);
 
         // ---- Find payout bull: first finisher with bets ----
         uint8 payoutBull = 0;
@@ -649,6 +685,16 @@ contract BullRaceBetting is ReentrancyGuard, Ownable, Pausable, IEntropyConsumer
     function getTrackMultipliers(uint8 trackType) external view returns (int8[6] memory) {
         require(trackType < 10, "Invalid track type");
         return TRACK_MULTIPLIERS[trackType];
+    }
+
+    /// @notice Get the seeder address for a race
+    function getRaceSeeder(uint256 raceId) external view returns (address) {
+        return _races[raceId].seeder;
+    }
+
+    /// @notice Get a seeder's claimable reward balance for a token
+    function getSeederBalance(address seeder, address token) external view returns (uint256) {
+        return seederBalance[seeder][token];
     }
 
     // ====================================================================
