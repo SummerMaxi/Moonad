@@ -1728,7 +1728,14 @@
           }
           if (userAddress) {
             const bet = await contract.getUserBet(live.raceId, userAddress);
-            if (bet.exists) {
+            if (bet.exists && !RM.myBet) {
+              RM.myBet = { bullIndex: Number(bet.bullId), amount: Number(ethers.formatEther(bet.amount)) };
+              // Show your-bet panel if bet was loaded for first time
+              if (RM.phase === 'betting' || RM.phase === 'switching') {
+                document.getElementById('your-bet-panel').classList.add('visible');
+                showWarnings();
+              }
+            } else if (bet.exists) {
               RM.myBet = { bullIndex: Number(bet.bullId), amount: Number(ethers.formatEther(bet.amount)) };
             }
           }
@@ -2805,11 +2812,15 @@
             setTimeout(() => { pd.classList.add('hidden'); }, 2500);
           }
           pi.innerHTML = '<span class="phase-badge betting">BETTING</span>';
-          trigBtn.textContent = '[ PLACE YOUR BETS ]';
+          trigBtn.textContent = RM.myBet ? '[ REVIEW BETS ]' : '[ PLACE YOUR BETS ]';
           trigBtn.classList.add('visible');
           renderBullCards();
           updatePoolDisplay();
           updateSeedButton();
+          if (RM.myBet) {
+            ybp.classList.add('visible');
+            showWarnings();
+          }
           // Start bulls walking in
           if (loadedModel && RM.seeded) spawnBulls();
           break;
