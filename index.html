@@ -109,6 +109,25 @@
     }
     #phase-display.lfg::after { content: ''; }
     #phase-display.hidden { display: none; }
+
+    /* Start overlay — click to activate audio + begin */
+    #start-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: var(--bg); z-index: 200; display: flex;
+      flex-direction: column; align-items: center; justify-content: center;
+      font-family: var(--font); color: var(--primary);
+      text-shadow: var(--glow); cursor: pointer;
+    }
+    #start-overlay.hidden { display: none; }
+    #start-overlay .boot-lines {
+      font-size: 12px; color: var(--muted); text-align: left;
+      margin-bottom: 24px; line-height: 1.8;
+    }
+    #start-overlay .boot-lines .ok { color: var(--primary); }
+    #start-overlay .start-prompt {
+      font-size: 16px; font-weight: 700; letter-spacing: 3px;
+      animation: blink 1s step-end infinite;
+    }
     @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 
     /* Countdown */
@@ -153,20 +172,17 @@
     /* ======== NEW: Bull Stat Cards (bottom panel) ======== */
     #bull-cards {
       position: fixed; bottom: 22px; left: 0; right: 0;
-      display: none; gap: 4px; padding: 0 8px;
-      z-index: 52; overflow-x: auto; overflow-y: hidden;
+      display: none; gap: 3px; padding: 0 6px;
+      z-index: 52; overflow-x: hidden; overflow-y: hidden;
       justify-content: center; flex-wrap: nowrap;
-      -webkit-overflow-scrolling: touch;
-      scrollbar-width: none;
     }
-    #bull-cards::-webkit-scrollbar { display: none; }
     #bull-cards.visible { display: flex; animation: slideUp 0.4s ease-out; }
     .bull-card {
       background: rgba(10, 10, 10, 0.95);
       border: 1px solid var(--muted);
-      padding: 6px 8px; min-width: 140px; max-width: 170px;
+      padding: 5px 6px; flex: 1 1 0; min-width: 0;
       font-size: 10px; color: var(--primary);
-      flex-shrink: 0; cursor: pointer;
+      cursor: pointer;
       pointer-events: auto; position: relative;
       transition: border-color 0.2s;
     }
@@ -174,15 +190,15 @@
     .bull-card.selected { border-color: var(--secondary); box-shadow: 0 0 8px rgba(255,176,0,0.3), 0 0 20px rgba(255,176,0,0.1); }
     .bull-card .card-name {
       font-weight: 700; font-size: 10px; letter-spacing: 0.5px;
-      margin-bottom: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
-    .bull-card .stat-row { display: flex; align-items: center; gap: 3px; margin: 1px 0; }
-    .bull-card .stat-label { width: 24px; color: var(--muted); font-size: 9px; flex-shrink: 0; }
+    .bull-card .stat-row { display: flex; align-items: center; gap: 2px; margin: 1px 0; }
+    .bull-card .stat-label { width: 52px; color: var(--muted); font-size: 8px; flex-shrink: 0; letter-spacing: 0.5px; }
     .bull-card .stat-bar-bg {
       flex: 1; height: 5px; background: rgba(31, 82, 31, 0.3); position: relative;
     }
     .bull-card .stat-bar-fill { height: 100%; transition: width 0.3s; }
-    .bull-card .stat-val { width: 14px; text-align: right; font-size: 9px; }
+    .bull-card .stat-val { width: 14px; text-align: right; font-size: 8px; }
     .bull-card .card-pool {
       margin-top: 4px; padding-top: 4px; border-top: 1px solid rgba(31,82,31,0.3);
       display: flex; justify-content: space-between; font-size: 9px; color: var(--muted);
@@ -191,8 +207,8 @@
     .bull-card .bet-btn {
       display: block; width: 100%; margin-top: 4px;
       background: none; border: 1px solid var(--primary); color: var(--primary);
-      font-family: var(--font); font-size: 9px; padding: 3px 0;
-      cursor: pointer; letter-spacing: 1px; text-align: center;
+      font-family: var(--font); font-size: 8px; padding: 3px 0;
+      cursor: pointer; letter-spacing: 0.5px; text-align: center;
     }
     .bull-card .bet-btn:hover { background: var(--primary); color: var(--bg); }
     .bull-card .bet-btn.placed {
@@ -397,8 +413,8 @@
 
     /* ======== ASCII Stat Bars ======== */
     .bull-card .stat-bar-ascii {
-      flex: 1; font-size: 9px; letter-spacing: -0.3px; line-height: 1;
-      font-family: var(--font);
+      flex: 1; font-size: 8px; letter-spacing: -0.5px; line-height: 1;
+      font-family: var(--font); overflow: hidden;
     }
 
     /* ======== Panel Slide/Fade Animations ======== */
@@ -475,7 +491,7 @@
       transform: translate(-50%, -50%);
       background: rgba(10, 10, 10, 0.97);
       border: 1px solid var(--primary);
-      padding: 0; min-width: 280px; max-width: 320px;
+      padding: 0; min-width: 320px; max-width: 380px; width: 90vw;
       z-index: 70; color: var(--primary); font-size: 12px;
       text-shadow: var(--glow);
       animation: fadeIn 0.2s ease-out;
@@ -499,9 +515,9 @@
       display: flex; align-items: center; gap: 6px; margin: 4px 0;
       font-size: 12px;
     }
-    #bull-stat-popup .popup-stat-label { width: 65px; color: var(--muted); font-size: 10px; flex-shrink: 0; }
-    #bull-stat-popup .popup-stat-bar { flex: 1; font-size: 12px; letter-spacing: 0px; }
-    #bull-stat-popup .popup-stat-val { width: 20px; text-align: right; font-weight: 700; }
+    #bull-stat-popup .popup-stat-label { width: 75px; color: var(--primary); font-size: 11px; flex-shrink: 0; letter-spacing: 0.5px; }
+    #bull-stat-popup .popup-stat-bar { flex: 1; font-size: 13px; letter-spacing: 1px; }
+    #bull-stat-popup .popup-stat-val { width: 24px; text-align: right; font-weight: 700; font-size: 12px; }
     #bull-stat-popup .popup-pool {
       margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--muted);
       display: flex; justify-content: space-between; font-size: 11px;
@@ -514,6 +530,158 @@
       pointer-events: auto;
     }
     #bull-stat-popup .popup-bet-btn:hover { background: var(--primary); color: var(--bg); }
+
+    /* ======== Bet Trigger Button ======== */
+    #bet-trigger-btn {
+      display: none; position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+      background: rgba(10, 10, 10, 0.95);
+      border: 1px solid var(--primary); color: var(--primary);
+      font-family: var(--font); font-size: 14px; font-weight: 700;
+      padding: 10px 28px; cursor: pointer; letter-spacing: 2px;
+      z-index: 55; pointer-events: auto;
+      text-shadow: var(--glow-strong);
+      box-shadow: 0 0 15px rgba(51, 255, 0, 0.3), inset 0 0 15px rgba(51, 255, 0, 0.05);
+      animation: pulse-glow 2s ease-in-out infinite;
+    }
+    #bet-trigger-btn:hover {
+      background: var(--primary); color: var(--bg);
+      text-shadow: none;
+      box-shadow: 0 0 25px rgba(51, 255, 0, 0.5);
+    }
+    #bet-trigger-btn.visible { display: block; }
+    @keyframes pulse-glow {
+      0%, 100% { box-shadow: 0 0 15px rgba(51, 255, 0, 0.3), inset 0 0 15px rgba(51, 255, 0, 0.05); }
+      50% { box-shadow: 0 0 25px rgba(51, 255, 0, 0.5), inset 0 0 25px rgba(51, 255, 0, 0.1); }
+    }
+
+    /* ======== Betting Panel Overlay ======== */
+    #betting-panel-backdrop {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.7); z-index: 71; display: none;
+    }
+    #betting-panel-backdrop.visible { display: block; }
+    #betting-panel {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      background: var(--bg);
+      border: 1px solid var(--primary);
+      max-width: 640px; width: 95vw;
+      z-index: 72; display: none;
+      color: var(--primary); font-size: 12px;
+      text-shadow: var(--glow);
+    }
+    #betting-panel.visible { display: block; animation: fadeIn 0.3s ease-out; }
+    #betting-panel-header {
+      padding: 8px 12px;
+      background: var(--primary); color: var(--bg);
+      font-weight: 700; font-size: 13px; letter-spacing: 1px;
+      display: flex; justify-content: space-between; align-items: center;
+      text-shadow: none; gap: 8px;
+    }
+    #betting-panel-header .panel-title { flex: 1; text-align: left; white-space: nowrap; }
+    #betting-panel-header .panel-counter { font-size: 12px; opacity: 0.8; }
+    #betting-panel-header .panel-close {
+      background: none; border: 1px solid var(--bg); color: var(--bg);
+      font-family: var(--font); font-size: 12px; font-weight: 700;
+      cursor: pointer; padding: 0 5px; line-height: 1.4;
+      pointer-events: auto; flex-shrink: 0;
+    }
+    #betting-panel-header .panel-close:hover { background: var(--bg); color: var(--primary); }
+    #betting-panel-body { padding: 20px; position: relative; }
+
+    /* Side navigation arrows */
+    .panel-nav-side {
+      position: absolute; top: 50%; transform: translateY(-50%);
+      background: rgba(10, 10, 10, 0.9);
+      border: 1px solid var(--primary); color: var(--primary);
+      font-family: var(--font); font-size: 18px; font-weight: 700;
+      cursor: pointer; padding: 8px 6px; line-height: 1;
+      pointer-events: auto; z-index: 73;
+      text-shadow: var(--glow);
+    }
+    .panel-nav-side:hover { background: var(--primary); color: var(--bg); text-shadow: none; }
+    .panel-nav-side.nav-left { left: -42px; }
+    .panel-nav-side.nav-right { right: -42px; }
+
+    /* Carousel content row: preview left, stats right */
+    .carousel-content-row {
+      display: flex; gap: 16px; margin-bottom: 14px; align-items: flex-start;
+    }
+
+    /* Bull preview canvas */
+    .carousel-bull-preview {
+      flex-shrink: 0; position: relative;
+    }
+    .carousel-bull-preview canvas {
+      border: 1px solid var(--muted);
+      background: var(--bg);
+      display: block;
+    }
+
+    /* Carousel bull header */
+    .carousel-bull-header {
+      display: flex; align-items: center; gap: 12px; margin-bottom: 12px;
+    }
+    .carousel-bull-header .color-block {
+      width: 28px; height: 28px; flex-shrink: 0;
+    }
+    .carousel-bull-header .bull-name {
+      font-weight: 800; font-size: 18px; letter-spacing: 1px;
+    }
+
+    /* Carousel stat lines */
+    .carousel-stats { flex: 1; min-width: 0; }
+    .carousel-stat-line {
+      display: flex; align-items: center; gap: 8px; margin: 5px 0; font-size: 13px;
+      white-space: nowrap;
+    }
+    .carousel-stat-line .stat-label {
+      width: 75px; color: var(--primary); font-size: 12px; letter-spacing: 0.5px;
+      flex-shrink: 0; text-transform: uppercase;
+    }
+    .carousel-stat-line .stat-bar {
+      flex: 1; font-size: 15px; letter-spacing: 1.5px;
+    }
+    .carousel-stat-line .stat-val {
+      width: 28px; text-align: right; font-weight: 700; font-size: 13px;
+    }
+
+    /* Carousel pool area */
+    .carousel-pool-area {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 12px 0; border-top: 1px solid var(--muted);
+      font-size: 14px; margin-bottom: 12px;
+    }
+    .carousel-pool-area .pool-label { color: var(--primary); }
+    .carousel-pool-area .pool-odds { color: var(--secondary); font-weight: 700; font-size: 16px; }
+
+    /* Carousel bet button */
+    .carousel-bet-btn {
+      display: block; width: 100%;
+      background: none; border: 1px solid var(--primary); color: var(--primary);
+      font-family: var(--font); font-size: 14px; font-weight: 700;
+      padding: 12px; cursor: pointer; letter-spacing: 2px;
+      text-align: center; pointer-events: auto;
+    }
+    .carousel-bet-btn:hover { background: var(--primary); color: var(--bg); text-shadow: none; }
+    .carousel-bet-btn.placed {
+      border-color: var(--secondary); color: var(--secondary);
+    }
+    .carousel-bet-btn.placed:hover { background: var(--secondary); color: var(--bg); }
+
+    /* Bull indicator dots */
+    #bull-indicators {
+      display: flex; justify-content: center; gap: 8px;
+      padding: 10px; border-top: 1px solid var(--muted);
+    }
+    .bull-indicator {
+      width: 8px; height: 8px; cursor: pointer;
+      opacity: 0.4; transition: opacity 0.2s, transform 0.2s;
+      pointer-events: auto;
+    }
+    .bull-indicator:hover { opacity: 0.7; }
+    .bull-indicator.active {
+      opacity: 1; transform: scale(1.5);
+    }
 
     /* ======== Minor Polish ======== */
     .bull-card .stat-label, .bull-card .stat-val, .bull-card .card-pool,
@@ -552,6 +720,22 @@
   </div>
 
   <div id="bull-cards"></div>
+
+  <div id="bet-trigger-btn" onclick="openBettingPanel()">[ PLACE YOUR BETS ]</div>
+
+  <div id="betting-panel-backdrop" onclick="closeBettingPanel()"></div>
+  <div id="betting-panel">
+    <div id="betting-panel-header">
+      <span class="panel-title">+-- BETTING SHEET --+</span>
+      <span class="panel-counter" id="betting-panel-counter">1/8</span>
+      <span id="betting-panel-timer"></span>
+      <button class="panel-close" onclick="closeBettingPanel()">[X]</button>
+    </div>
+    <button class="panel-nav-side nav-left" onclick="prevBull()">&lt;</button>
+    <button class="panel-nav-side nav-right" onclick="nextBull()">&gt;</button>
+    <div id="betting-panel-body"></div>
+    <div id="bull-indicators"></div>
+  </div>
 
   <div id="bet-modal-backdrop" onclick="closeBetModal()"></div>
   <div id="bet-modal">
@@ -605,6 +789,10 @@
     <div class="popup-body" id="popup-body"></div>
   </div>
 
+  <div id="start-overlay" class="hidden">
+    <div class="boot-lines" id="boot-lines"></div>
+    <div class="start-prompt">[ CLICK TO START ]</div>
+  </div>
   <div id="phase-display">&gt; loading_model</div>
   <div id="winner">
     <div id="winner-header"><span>+-- RACE COMPLETE --+</span><button id="winner-close" onclick="document.getElementById('winner').style.display='none'">[X]</button></div>
@@ -679,6 +867,7 @@
       function tick() {
         if (i < text.length) {
           el.textContent = text.substring(0, i + 1);
+          if (typeof SFX !== 'undefined') SFX.typeKey();
           i++;
           _typewriterTimeout = setTimeout(tick, speed);
         }
@@ -764,7 +953,14 @@
     const moveKeys = ['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'];
     addEventListener('keydown', (e) => {
       const key = e.key.toLowerCase();
-      if (e.key === 'Escape') { closeBetModal(); hideBullStatPopup(); return; }
+      if (e.key === 'Escape') { closeBettingPanel(); closeBetModal(); hideBullStatPopup(); return; }
+      // Carousel navigation when betting panel is open
+      if (bettingPanelOpen && (key === 'arrowleft' || key === 'arrowright')) {
+        e.preventDefault();
+        if (key === 'arrowleft') prevBull();
+        else nextBull();
+        return;
+      }
       if (moveKeys.includes(key)) {
         keysPressed.add(key);
         if (camMode !== 'free') { camMode = 'free'; controls.enabled = true; updateCamButtons(); }
@@ -972,6 +1168,88 @@
     let modelScale = 1;
     let bestRotY = -Math.PI / 2;
 
+    // ======== BULL PREVIEW RENDERER ========
+    const PREVIEW_W = 180, PREVIEW_H = 200;
+    const previewRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    previewRenderer.setSize(PREVIEW_W, PREVIEW_H);
+    previewRenderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    previewRenderer.setClearColor(0x0a0a0a, 1);
+    const previewScene = new THREE.Scene();
+    previewScene.add(new THREE.AmbientLight(0xffffff, 1.2));
+    const previewDirLight = new THREE.DirectionalLight(0xffffff, 0.6);
+    previewDirLight.position.set(3, 4, 2);
+    previewScene.add(previewDirLight);
+    const previewCam = new THREE.PerspectiveCamera(35, PREVIEW_W / PREVIEW_H, 0.1, 50);
+    let previewBullMesh = null;
+    let previewMixer = null;
+
+    function renderBullPreview(bullIndex, container) {
+      if (!loadedModel) return;
+      // Clean up previous preview
+      if (previewBullMesh) { previewScene.remove(previewBullMesh); previewBullMesh = null; }
+      if (previewMixer) { previewMixer.stopAllAction(); previewMixer = null; }
+
+      const clone = SkeletonUtils.clone(loadedModel);
+      clone.scale.setScalar(modelScale);
+      clone.rotation.y = bestRotY;
+      const bc = bullColors[bullIndex];
+      clone.traverse(child => {
+        if (child.isMesh) {
+          child.material = new THREE.MeshBasicMaterial({
+            color: bc.wire, wireframe: true, transparent: true, opacity: 0.9,
+          });
+        }
+      });
+
+      // Play walk/trot animation so the bull is visibly moving
+      const mixer = new THREE.AnimationMixer(clone);
+      if (loadedAnimations) {
+        const walkClip = loadedAnimations.find(c => c.name.includes('Walk_F_RM'))
+          || loadedAnimations.find(c => c.name.includes('Trot_F_RM'))
+          || loadedAnimations.find(c => c.name.includes('Idle_1'))
+          || loadedAnimations[0];
+        if (walkClip) {
+          const clip = stripRootMotion(walkClip);
+          const action = mixer.clipAction(clip);
+          action.timeScale = 0.8;
+          action.play();
+          mixer.setTime(Math.random() * clip.duration);
+        }
+      }
+      previewMixer = mixer;
+
+      previewScene.add(clone);
+      previewBullMesh = clone;
+
+      // Center and frame the bull
+      clone.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(clone);
+      const center = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3());
+      clone.position.y -= box.min.y;
+      clone.position.x -= center.x;
+      clone.position.z -= center.z;
+
+      previewCam.position.set(size.x * 1.2, size.y * 0.6, size.x * 1.5);
+      previewCam.lookAt(0, size.y * 0.4, 0);
+
+      previewRenderer.render(previewScene, previewCam);
+      container.innerHTML = '';
+      container.appendChild(previewRenderer.domElement);
+    }
+
+    // Animate preview bull in the render loop
+    function updateBullPreview(dt) {
+      if (previewMixer && bettingPanelOpen) {
+        previewMixer.update(dt);
+        // Slow turntable rotation
+        if (previewBullMesh) {
+          previewBullMesh.rotation.y += dt * 0.3;
+        }
+        previewRenderer.render(previewScene, previewCam);
+      }
+    }
+
     function stripRootMotion(clip) {
       clip.tracks = clip.tracks.filter(track => !(track.name.includes('root_bone') && track.name.endsWith('.position')));
       return clip;
@@ -1038,7 +1316,7 @@
           const empty = '\u00B7'.repeat(10 - val);
           const color = s === 5 ? (val >= 7 ? 'var(--error)' : val <= 3 ? 'var(--primary)' : bc.dot) : bc.dot;
           barsHtml += `<div class="stat-row">
-            <span class="stat-label">${STAT_NAMES[s]}</span>
+            <span class="stat-label">${STAT_FULL[s]}</span>
             <span class="stat-bar-ascii" style="color:${color}">${filled}<span style="color:var(--muted)">${empty}</span></span>
             <span class="stat-val">${val}</span>
           </div>`;
@@ -1060,6 +1338,145 @@
         container.appendChild(card);
       }
     }
+
+    // ======== BETTING PANEL (CAROUSEL) ========
+    let panelBullIndex = 0;
+    let bettingPanelOpen = false;
+
+    function renderBettingPanel() {
+      const body = document.getElementById('betting-panel-body');
+      const i = panelBullIndex;
+      const stats = RM.bullStats[i];
+      const bc = bullColors[i];
+      const pool = getTotalPoolForBull(i);
+      const totalPool = getTotalPool();
+      const odds = pool > 0 ? (totalPool / pool * 0.9).toFixed(1) : '--';
+      const isMyBet = RM.myBet && RM.myBet.bullIndex === i;
+
+      // Update panel border color
+      document.getElementById('betting-panel').style.borderColor = bc.dot;
+
+      // Update counter
+      const counter = document.getElementById('betting-panel-counter');
+      if (counter) counter.textContent = `${i + 1}/${NUM_BULLS}`;
+
+      // Stats
+      let statsHtml = '<div class="carousel-stats">';
+      for (let s = 0; s < 6; s++) {
+        const val = stats[s];
+        const filled = '|'.repeat(val);
+        const empty = '\u00B7'.repeat(10 - val);
+        const color = s === 5 ? (val >= 7 ? 'var(--error)' : val <= 3 ? 'var(--primary)' : bc.dot) : bc.dot;
+        const warn = s === 5 && val >= 7 ? ' \u26A1' : '';
+        statsHtml += `<div class="carousel-stat-line">
+          <span class="stat-label">${STAT_FULL[s]}</span>
+          <span class="stat-bar" style="color:${color}">${filled}<span style="color:#2a6b2a">${empty}</span></span>
+          <span class="stat-val" style="color:${color}">${val}${warn}</span>
+        </div>`;
+      }
+      statsHtml += '</div>';
+
+      // Bet button
+      let btnHtml = '';
+      if (isMyBet) {
+        btnHtml = `<button class="carousel-bet-btn placed">[ BET PLACED \u2713 ]</button>`;
+        btnHtml += `<div style="color:var(--secondary);font-size:10px;margin-top:6px;text-align:center">YOUR BET: ${RM.myBet.amount.toFixed(2)} MON</div>`;
+      } else if (!RM.myBet && RM.walletConnected) {
+        btnHtml = `<button class="carousel-bet-btn" onclick="openBetModal(${i})">[ BET ON ${bc.name.toUpperCase()} ]</button>`;
+      } else if (RM.myBet && RM.walletConnected) {
+        btnHtml = `<button class="carousel-bet-btn" style="color:#555;border-color:#555;cursor:default">[ BET PLACED ON ${bullColors[RM.myBet.bullIndex].name.toUpperCase()} ]</button>`;
+      } else {
+        btnHtml = `<button class="carousel-bet-btn" style="color:#555;border-color:#555" onclick="mockConnectWallet()">[ CONNECT WALLET ]</button>`;
+      }
+
+      body.innerHTML = `
+        <div class="carousel-bull-header">
+          <div class="color-block" style="background:${bc.dot}"></div>
+          <span class="bull-name" style="color:${bc.dot}">${bc.name}</span>
+        </div>
+        <div class="carousel-content-row">
+          <div class="carousel-bull-preview" id="bull-preview-container"></div>
+          ${statsHtml}
+        </div>
+        <div class="carousel-pool-area">
+          <span class="pool-label">POOL: ${pool.toFixed(1)} MON</span>
+          <span class="pool-odds">${odds}x</span>
+        </div>
+        ${btnHtml}
+      `;
+
+      // Render 3D bull preview
+      const previewContainer = document.getElementById('bull-preview-container');
+      if (previewContainer) renderBullPreview(i, previewContainer);
+
+      // Render indicator dots
+      renderBullIndicators();
+    }
+
+    function renderBullIndicators() {
+      const container = document.getElementById('bull-indicators');
+      let html = '';
+      for (let i = 0; i < NUM_BULLS; i++) {
+        const bc = bullColors[i];
+        const active = i === panelBullIndex ? ' active' : '';
+        html += `<div class="bull-indicator${active}" style="background:${bc.dot}" onclick="goToBull(${i})"></div>`;
+      }
+      container.innerHTML = html;
+    }
+
+    function updateBettingPanelTimer() {
+      const el = document.getElementById('betting-panel-timer');
+      if (!el) return;
+      const remaining = getPhaseTimeRemaining();
+      const m = Math.floor(remaining / 60);
+      const s = Math.floor(remaining % 60);
+      const label = RM.phase === 'switching' ? 'switching closes' : 'betting closes';
+      el.textContent = `${label}: ${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    }
+
+    window.openBettingPanel = function() {
+      bettingPanelOpen = true;
+      SFX.panelOpen();
+      // If user has a bet, start on that bull; otherwise start at 0
+      panelBullIndex = RM.myBet ? RM.myBet.bullIndex : 0;
+      renderBettingPanel();
+      updateBettingPanelTimer();
+      document.getElementById('betting-panel').classList.add('visible');
+      document.getElementById('betting-panel-backdrop').classList.add('visible');
+      if (!window._bettingPanelTimer) {
+        window._bettingPanelTimer = setInterval(updateBettingPanelTimer, 1000);
+      }
+    };
+
+    window.closeBettingPanel = function() {
+      if (bettingPanelOpen) SFX.panelClose();
+      bettingPanelOpen = false;
+      document.getElementById('betting-panel').classList.remove('visible');
+      document.getElementById('betting-panel-backdrop').classList.remove('visible');
+      document.getElementById('betting-panel').style.borderColor = '';
+      if (window._bettingPanelTimer) {
+        clearInterval(window._bettingPanelTimer);
+        window._bettingPanelTimer = null;
+      }
+    };
+
+    window.prevBull = function() {
+      SFX.tick();
+      panelBullIndex = (panelBullIndex - 1 + NUM_BULLS) % NUM_BULLS;
+      renderBettingPanel();
+    };
+
+    window.nextBull = function() {
+      SFX.tick();
+      panelBullIndex = (panelBullIndex + 1) % NUM_BULLS;
+      renderBettingPanel();
+    };
+
+    window.goToBull = function(idx) {
+      SFX.tick();
+      panelBullIndex = idx;
+      renderBettingPanel();
+    };
 
     function showWarnings() {
       if (!RM.myBet || RM.trackType < 0) return;
@@ -1153,7 +1570,8 @@
     window.openBetModal = function(bullIndex) {
       if (RM.phase !== 'betting' && RM.phase !== 'switching') return;
       if (RM.myBet) return; // already bet
-      if (!RM.walletConnected) { alert('Connect wallet first'); return; }
+      if (!RM.walletConnected) { SFX.error(); alert('Connect wallet first'); return; }
+      SFX.panelOpen();
       document.getElementById('bet-modal-backdrop').style.display = 'block';
       document.getElementById('bet-modal').style.display = 'block';
       // Start countdown timer in modal
@@ -1171,6 +1589,7 @@
     };
 
     window.closeBetModal = function() {
+      SFX.panelClose();
       document.getElementById('bet-modal-backdrop').style.display = 'none';
       document.getElementById('bet-modal').style.display = 'none';
       if (window._modalCountdown) { clearInterval(window._modalCountdown); window._modalCountdown = null; }
@@ -1178,19 +1597,29 @@
 
     window.confirmBet = function() {
       const amount = parseFloat(document.getElementById('bet-amount').value);
-      if (!amount || amount < 0.01 || amount > 100) { alert('Invalid amount (0.01 - 100 MON)'); return; }
-      if (amount > RM.mockBalance) { alert('Insufficient balance'); return; }
+      if (!amount || amount < 0.01 || amount > 100) { SFX.error(); alert('Invalid amount (0.01 - 100 MON)'); return; }
+      if (amount > RM.mockBalance) { SFX.error(); alert('Insufficient balance'); return; }
+      SFX.confirm();
       RM.myBet = { bullIndex: window._betModalBull, amount };
       closeBetModal();
       renderBullCards();
+      // Refresh betting panel if open
+      if (document.getElementById('betting-panel').classList.contains('visible')) {
+        renderBettingPanel();
+      }
       updatePoolDisplay();
       updateBalanceDisplay();
       document.getElementById('your-bet-panel').classList.add('visible');
       showWarnings();
+      // Update trigger button text during switching phase
+      if (RM.phase === 'switching') {
+        document.getElementById('bet-trigger-btn').textContent = '[ REVIEW / SWITCH ]';
+      }
     };
 
     window.openSwitchMode = function() {
       if (RM.phase !== 'switching' || !RM.myBet) return;
+      SFX.click();
       const oldAmount = RM.myBet.amount;
       const fee = oldAmount * 0.05;
       const remaining = oldAmount - fee;
@@ -1198,13 +1627,18 @@
       RM.myBet = null;
       RM.mockBalance -= fee; // fee is lost
       renderBullCards();
+      if (document.getElementById('betting-panel').classList.contains('visible')) {
+        renderBettingPanel();
+      }
       updatePoolDisplay();
       document.getElementById('your-bet-panel').classList.remove('visible');
+      document.getElementById('bet-trigger-btn').textContent = '[ PLACE YOUR BETS ]';
       // Now the user can click a new bull card. Their amount will be 'remaining'
       window._switchRemaining = remaining;
     };
 
     window.mockConnectWallet = function() {
+      SFX.walletConnect();
       RM.walletConnected = !RM.walletConnected;
       const btn = document.getElementById('wallet-btn');
       if (RM.walletConnected) {
@@ -1219,6 +1653,7 @@
     };
 
     window.claimWinnings = function() {
+      SFX.chaChing();
       RM.mockWinnings = 0;
       document.getElementById('wallet-btn').textContent = `0xMo0n...AD | ${RM.mockBalance.toFixed(1)} MON`;
       updateClaimBanner();
@@ -1295,6 +1730,7 @@
     function showBullStatPopup(bullIndex) {
       const stats = RM.bullStats[bullIndex];
       if (!stats) return;
+      SFX.click();
       const bc = bullColors[bullIndex];
       const popup = document.getElementById('bull-stat-popup');
       const nameEl = document.getElementById('popup-bull-name');
@@ -1312,7 +1748,7 @@
         const warn = s === 5 && val >= 7 ? ' \u26A1' : '';
         html += `<div class="popup-stat">
           <span class="popup-stat-label">${STAT_FULL[s]}</span>
-          <span class="popup-stat-bar" style="color:${color}">${filled}<span style="color:var(--muted)">${empty}</span></span>
+          <span class="popup-stat-bar" style="color:${color}">${filled}<span style="color:#2a6b2a">${empty}</span></span>
           <span class="popup-stat-val" style="color:${color}">${val}${warn}</span>
         </div>`;
       }
@@ -1334,6 +1770,7 @@
     }
 
     window.hideBullStatPopup = function() {
+      SFX.panelClose();
       document.getElementById('bull-stat-popup').classList.remove('visible');
     };
 
@@ -1369,6 +1806,407 @@
       osc.start(ctx.currentTime); osc.stop(ctx.currentTime + duration);
     }
 
+    // --- Terminal Sound Library (synthesized retro/CRT aesthetic) ---
+    // Helper: create noise buffer
+    function _noiseBuf(ctx, dur) {
+      const sz = ctx.sampleRate * dur;
+      const buf = ctx.createBuffer(1, sz, ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < sz; i++) d[i] = Math.random() * 2 - 1;
+      return buf;
+    }
+
+    const SFX = {
+      // Typewriter key — noise burst through bandpass filter (mechanical click)
+      typeKey() {
+        const ctx = ensureAudio(); const t = ctx.currentTime;
+        const noise = ctx.createBufferSource();
+        noise.buffer = _noiseBuf(ctx, 0.02);
+        const bp = ctx.createBiquadFilter();
+        bp.type = 'bandpass'; bp.frequency.value = 3000 + Math.random() * 1500; bp.Q.value = 2;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.08, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.018);
+        noise.connect(bp); bp.connect(g); g.connect(ctx.destination);
+        noise.start(t); noise.stop(t + 0.02);
+      },
+
+      // UI tick — carousel nav, indicator dots
+      tick() {
+        const ctx = ensureAudio(); const t = ctx.currentTime;
+        // Noise click attack
+        const noise = ctx.createBufferSource();
+        noise.buffer = _noiseBuf(ctx, 0.015);
+        const hp = ctx.createBiquadFilter();
+        hp.type = 'highpass'; hp.frequency.value = 4000;
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.1, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.012);
+        noise.connect(hp); hp.connect(ng); ng.connect(ctx.destination);
+        noise.start(t); noise.stop(t + 0.015);
+        // Tonal body
+        const osc = ctx.createOscillator(); const g = ctx.createGain();
+        osc.type = 'square'; osc.frequency.value = 1400 + Math.random() * 200;
+        g.gain.setValueAtTime(0.06, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.025);
+        osc.connect(g); g.connect(ctx.destination);
+        osc.start(t); osc.stop(t + 0.03);
+      },
+
+      // UI click — buttons, popup open
+      click() {
+        const ctx = ensureAudio(); const t = ctx.currentTime;
+        // Noise transient
+        const noise = ctx.createBufferSource();
+        noise.buffer = _noiseBuf(ctx, 0.03);
+        const bp = ctx.createBiquadFilter();
+        bp.type = 'bandpass'; bp.frequency.value = 2500; bp.Q.value = 1.5;
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.12, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.025);
+        noise.connect(bp); bp.connect(ng); ng.connect(ctx.destination);
+        noise.start(t); noise.stop(t + 0.03);
+        // Pitch-drop tone
+        const osc = ctx.createOscillator(); const g = ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(900, t);
+        osc.frequency.exponentialRampToValueAtTime(500, t + 0.06);
+        g.gain.setValueAtTime(0.1, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
+        osc.connect(g); g.connect(ctx.destination);
+        osc.start(t); osc.stop(t + 0.07);
+      },
+
+      // Panel open — rising filtered sweep + whoosh noise
+      panelOpen() {
+        const ctx = ensureAudio(); const t = ctx.currentTime;
+        // Whoosh noise
+        const noise = ctx.createBufferSource();
+        noise.buffer = _noiseBuf(ctx, 0.2);
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.setValueAtTime(200, t);
+        lp.frequency.exponentialRampToValueAtTime(6000, t + 0.15);
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.06, t);
+        ng.gain.setValueAtTime(0.08, t + 0.05);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+        noise.connect(lp); lp.connect(ng); ng.connect(ctx.destination);
+        noise.start(t); noise.stop(t + 0.2);
+        // Rising tone
+        const osc = ctx.createOscillator(); const g = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(150, t);
+        osc.frequency.exponentialRampToValueAtTime(1000, t + 0.12);
+        const f = ctx.createBiquadFilter();
+        f.type = 'lowpass'; f.frequency.value = 3000; f.Q.value = 3;
+        g.gain.setValueAtTime(0.06, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+        osc.connect(f); f.connect(g); g.connect(ctx.destination);
+        osc.start(t); osc.stop(t + 0.15);
+      },
+
+      // Panel close — falling filtered sweep + whoosh
+      panelClose() {
+        const ctx = ensureAudio(); const t = ctx.currentTime;
+        // Whoosh noise
+        const noise = ctx.createBufferSource();
+        noise.buffer = _noiseBuf(ctx, 0.2);
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.setValueAtTime(6000, t);
+        lp.frequency.exponentialRampToValueAtTime(200, t + 0.15);
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.08, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+        noise.connect(lp); lp.connect(ng); ng.connect(ctx.destination);
+        noise.start(t); noise.stop(t + 0.2);
+        // Falling tone
+        const osc = ctx.createOscillator(); const g = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(1000, t);
+        osc.frequency.exponentialRampToValueAtTime(150, t + 0.12);
+        const f = ctx.createBiquadFilter();
+        f.type = 'lowpass'; f.frequency.value = 3000; f.Q.value = 3;
+        g.gain.setValueAtTime(0.06, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+        osc.connect(f); f.connect(g); g.connect(ctx.destination);
+        osc.start(t); osc.stop(t + 0.15);
+      },
+
+      // Confirm — ascending 3-note chime with harmonics
+      confirm() {
+        const ctx = ensureAudio(); const t = ctx.currentTime;
+        [660, 880, 1100].forEach((f, i) => {
+          const osc = ctx.createOscillator(); const g = ctx.createGain();
+          osc.type = 'square'; osc.frequency.value = f;
+          g.gain.setValueAtTime(0.12, t + i * 0.08);
+          g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.08 + 0.18);
+          osc.connect(g); g.connect(ctx.destination);
+          osc.start(t + i * 0.08); osc.stop(t + i * 0.08 + 0.18);
+          // Octave harmonic
+          const osc2 = ctx.createOscillator(); const g2 = ctx.createGain();
+          osc2.type = 'sine'; osc2.frequency.value = f * 2;
+          g2.gain.setValueAtTime(0.04, t + i * 0.08);
+          g2.gain.exponentialRampToValueAtTime(0.001, t + i * 0.08 + 0.12);
+          osc2.connect(g2); g2.connect(ctx.destination);
+          osc2.start(t + i * 0.08); osc2.stop(t + i * 0.08 + 0.12);
+        });
+      },
+
+      // Error — harsh descending buzz with distortion
+      error() {
+        const ctx = ensureAudio(); const t = ctx.currentTime;
+        // Main buzz
+        const osc = ctx.createOscillator(); const g = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(180, t);
+        osc.frequency.exponentialRampToValueAtTime(80, t + 0.2);
+        g.gain.setValueAtTime(0.18, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+        osc.connect(g); g.connect(ctx.destination);
+        osc.start(t); osc.stop(t + 0.3);
+        // Sub buzz
+        const osc2 = ctx.createOscillator(); const g2 = ctx.createGain();
+        osc2.type = 'square'; osc2.frequency.value = 60;
+        g2.gain.setValueAtTime(0.1, t);
+        g2.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+        osc2.connect(g2); g2.connect(ctx.destination);
+        osc2.start(t); osc2.stop(t + 0.25);
+        // Noise crackle
+        const noise = ctx.createBufferSource();
+        noise.buffer = _noiseBuf(ctx, 0.1);
+        const bp = ctx.createBiquadFilter();
+        bp.type = 'bandpass'; bp.frequency.value = 800; bp.Q.value = 1;
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.08, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+        noise.connect(bp); bp.connect(ng); ng.connect(ctx.destination);
+        noise.start(t); noise.stop(t + 0.1);
+      },
+
+      // Phase transition — dramatic filtered sweep + impact hit + noise wash
+      phaseChange() {
+        const ctx = ensureAudio(); const t = ctx.currentTime;
+        // Rising sweep
+        const osc1 = ctx.createOscillator(); const g1 = ctx.createGain();
+        osc1.type = 'sawtooth';
+        osc1.frequency.setValueAtTime(80, t);
+        osc1.frequency.exponentialRampToValueAtTime(1500, t + 0.2);
+        const f1 = ctx.createBiquadFilter();
+        f1.type = 'lowpass'; f1.frequency.setValueAtTime(500, t);
+        f1.frequency.exponentialRampToValueAtTime(8000, t + 0.2);
+        g1.gain.setValueAtTime(0.1, t);
+        g1.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+        osc1.connect(f1); f1.connect(g1); g1.connect(ctx.destination);
+        osc1.start(t); osc1.stop(t + 0.3);
+        // Impact hit
+        const osc2 = ctx.createOscillator(); const g2 = ctx.createGain();
+        osc2.type = 'square'; osc2.frequency.value = 440;
+        g2.gain.setValueAtTime(0.2, t + 0.18);
+        g2.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+        osc2.connect(g2); g2.connect(ctx.destination);
+        osc2.start(t + 0.18); osc2.stop(t + 0.45);
+        // Noise wash
+        const noise = ctx.createBufferSource();
+        noise.buffer = _noiseBuf(ctx, 0.3);
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass'; lp.frequency.value = 3000;
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.001, t);
+        ng.gain.linearRampToValueAtTime(0.1, t + 0.18);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+        noise.connect(lp); lp.connect(ng); ng.connect(ctx.destination);
+        noise.start(t); noise.stop(t + 0.4);
+      },
+
+      // Cha-ching — cash register: metallic ring + ascending sparkle
+      chaChing() {
+        const ctx = ensureAudio(); const t = ctx.currentTime;
+        // Metallic ring (detuned oscillators)
+        [2637, 2793].forEach((f) => {
+          const osc = ctx.createOscillator(); const g = ctx.createGain();
+          osc.type = 'sine'; osc.frequency.value = f;
+          g.gain.setValueAtTime(0.1, t);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+          osc.connect(g); g.connect(ctx.destination);
+          osc.start(t); osc.stop(t + 0.4);
+        });
+        // Ascending sparkle
+        [1200, 1600, 2000, 2600].forEach((f, i) => {
+          const osc = ctx.createOscillator(); const g = ctx.createGain();
+          osc.type = 'square'; osc.frequency.value = f;
+          g.gain.setValueAtTime(0.08, t + 0.05 + i * 0.06);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.05 + i * 0.06 + 0.1);
+          osc.connect(g); g.connect(ctx.destination);
+          osc.start(t + 0.05 + i * 0.06); osc.stop(t + 0.05 + i * 0.06 + 0.1);
+        });
+        // Noise click transient
+        const noise = ctx.createBufferSource();
+        noise.buffer = _noiseBuf(ctx, 0.03);
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.15, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.02);
+        noise.connect(ng); ng.connect(ctx.destination);
+        noise.start(t); noise.stop(t + 0.03);
+      },
+
+      // Wallet connect — modem handshake: carrier tones + data blips + noise
+      walletConnect() {
+        const ctx = ensureAudio(); const t = ctx.currentTime;
+        // Carrier tone
+        const carrier = ctx.createOscillator(); const cg = ctx.createGain();
+        carrier.type = 'sine'; carrier.frequency.value = 1200;
+        cg.gain.setValueAtTime(0.06, t);
+        cg.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+        carrier.connect(cg); cg.connect(ctx.destination);
+        carrier.start(t); carrier.stop(t + 0.4);
+        // Data blips
+        [2400, 1800, 2400, 1200, 2400, 1800, 1200].forEach((f, i) => {
+          const osc = ctx.createOscillator(); const g = ctx.createGain();
+          osc.type = 'square'; osc.frequency.value = f;
+          const st = t + 0.04 + i * 0.04;
+          g.gain.setValueAtTime(0.06, st);
+          g.gain.exponentialRampToValueAtTime(0.001, st + 0.03);
+          osc.connect(g); g.connect(ctx.destination);
+          osc.start(st); osc.stop(st + 0.035);
+        });
+        // Static noise
+        const noise = ctx.createBufferSource();
+        noise.buffer = _noiseBuf(ctx, 0.4);
+        const bp = ctx.createBiquadFilter();
+        bp.type = 'bandpass'; bp.frequency.value = 2000; bp.Q.value = 0.5;
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.03, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+        noise.connect(bp); bp.connect(ng); ng.connect(ctx.destination);
+        noise.start(t); noise.stop(t + 0.4);
+      },
+
+      // Race start horn — air horn: noise burst + layered sustained tones
+      raceHorn() {
+        const ctx = ensureAudio(); const t = ctx.currentTime;
+        // Initial noise burst
+        const noise = ctx.createBufferSource();
+        noise.buffer = _noiseBuf(ctx, 0.2);
+        const bp = ctx.createBiquadFilter();
+        bp.type = 'bandpass'; bp.frequency.value = 1000; bp.Q.value = 1;
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.2, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+        noise.connect(bp); bp.connect(ng); ng.connect(ctx.destination);
+        noise.start(t); noise.stop(t + 0.2);
+        // Layered horn tones
+        [220, 330, 440].forEach((f, i) => {
+          const osc = ctx.createOscillator(); const g = ctx.createGain();
+          osc.type = i === 0 ? 'sawtooth' : 'square';
+          osc.frequency.value = f;
+          g.gain.setValueAtTime(i === 0 ? 0.12 : 0.06, t + 0.05);
+          g.gain.setValueAtTime(i === 0 ? 0.12 : 0.06, t + 0.4);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
+          osc.connect(g); g.connect(ctx.destination);
+          osc.start(t + 0.05); osc.stop(t + 0.7);
+        });
+      },
+
+      // Bull finish — triumphant arpeggio (C-E-G-C) with shimmer
+      bullFinish() {
+        const ctx = ensureAudio(); const t = ctx.currentTime;
+        [523, 659, 784, 1047].forEach((f, i) => {
+          const osc = ctx.createOscillator(); const g = ctx.createGain();
+          osc.type = 'square'; osc.frequency.value = f;
+          g.gain.setValueAtTime(0.1, t + i * 0.08);
+          g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.08 + 0.2);
+          osc.connect(g); g.connect(ctx.destination);
+          osc.start(t + i * 0.08); osc.stop(t + i * 0.08 + 0.2);
+          // Shimmer harmonic
+          const s = ctx.createOscillator(); const sg = ctx.createGain();
+          s.type = 'sine'; s.frequency.value = f * 2;
+          sg.gain.setValueAtTime(0.03, t + i * 0.08);
+          sg.gain.exponentialRampToValueAtTime(0.001, t + i * 0.08 + 0.15);
+          s.connect(sg); sg.connect(ctx.destination);
+          s.start(t + i * 0.08); s.stop(t + i * 0.08 + 0.15);
+        });
+      },
+
+      // Boot sequence — CRT power-on + POST beeps + modem init
+      bootUp() {
+        const ctx = ensureAudio(); const t = ctx.currentTime;
+        // CRT power-on hum (rising sine)
+        const hum = ctx.createOscillator(); const hg = ctx.createGain();
+        hum.type = 'sine';
+        hum.frequency.setValueAtTime(40, t);
+        hum.frequency.exponentialRampToValueAtTime(60, t + 0.5);
+        hg.gain.setValueAtTime(0.001, t);
+        hg.gain.linearRampToValueAtTime(0.08, t + 0.3);
+        hg.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+        hum.connect(hg); hg.connect(ctx.destination);
+        hum.start(t); hum.stop(t + 0.6);
+        // CRT static crackle
+        const noise = ctx.createBufferSource();
+        noise.buffer = _noiseBuf(ctx, 0.4);
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.setValueAtTime(200, t);
+        lp.frequency.exponentialRampToValueAtTime(8000, t + 0.2);
+        lp.frequency.exponentialRampToValueAtTime(1000, t + 0.4);
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.001, t);
+        ng.gain.linearRampToValueAtTime(0.12, t + 0.15);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+        noise.connect(lp); lp.connect(ng); ng.connect(ctx.destination);
+        noise.start(t); noise.stop(t + 0.4);
+        // POST beeps (ascending)
+        [800, 1000, 1200].forEach((f, i) => {
+          const osc = ctx.createOscillator(); const g = ctx.createGain();
+          osc.type = 'square'; osc.frequency.value = f;
+          const bt = t + 0.4 + i * 0.12;
+          g.gain.setValueAtTime(0.1, bt);
+          g.gain.exponentialRampToValueAtTime(0.001, bt + 0.08);
+          osc.connect(g); g.connect(ctx.destination);
+          osc.start(bt); osc.stop(bt + 0.08);
+        });
+      },
+
+      // LFG announcement — big dramatic chord + sweep
+      lfg() {
+        const ctx = ensureAudio(); const t = ctx.currentTime;
+        // Noise impact
+        const noise = ctx.createBufferSource();
+        noise.buffer = _noiseBuf(ctx, 0.15);
+        const bp = ctx.createBiquadFilter();
+        bp.type = 'bandpass'; bp.frequency.value = 1500; bp.Q.value = 0.8;
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.2, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+        noise.connect(bp); bp.connect(ng); ng.connect(ctx.destination);
+        noise.start(t); noise.stop(t + 0.15);
+        // Power chord (C5-G5-C6)
+        [523, 784, 1047].forEach((f) => {
+          const osc = ctx.createOscillator(); const g = ctx.createGain();
+          osc.type = 'sawtooth'; osc.frequency.value = f;
+          const fl = ctx.createBiquadFilter();
+          fl.type = 'lowpass'; fl.frequency.value = 4000;
+          g.gain.setValueAtTime(0.1, t + 0.02);
+          g.gain.setValueAtTime(0.1, t + 0.3);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.8);
+          osc.connect(fl); fl.connect(g); g.connect(ctx.destination);
+          osc.start(t + 0.02); osc.stop(t + 0.8);
+        });
+        // Rising sweep underneath
+        const sweep = ctx.createOscillator(); const sg = ctx.createGain();
+        sweep.type = 'sawtooth';
+        sweep.frequency.setValueAtTime(100, t);
+        sweep.frequency.exponentialRampToValueAtTime(2000, t + 0.3);
+        const sf = ctx.createBiquadFilter();
+        sf.type = 'lowpass'; sf.frequency.value = 3000;
+        sg.gain.setValueAtTime(0.06, t);
+        sg.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+        sweep.connect(sf); sf.connect(sg); sg.connect(ctx.destination);
+        sweep.start(t); sweep.stop(t + 0.35);
+      },
+    };
+
     // ======== PHASE MANAGEMENT ========
     function setPhase(phase) {
       RM.phase = phase;
@@ -1379,16 +2217,20 @@
       const tr = document.getElementById('track-reveal');
       const ybp = document.getElementById('your-bet-panel');
       const pi = document.getElementById('phase-info');
+      const trigBtn = document.getElementById('bet-trigger-btn');
 
       // Reset visibility
       pd.className = ''; pd.style.display = 'block';
       bc.classList.remove('visible');
       rp.classList.remove('visible');
       tr.classList.remove('visible');
+      trigBtn.classList.remove('visible');
+      closeBettingPanel();
       hideTrackBanner();
 
       switch (phase) {
         case 'waiting':
+          SFX.phaseChange();
           typeText(pd, '> generating_bulls');
           pi.innerHTML = '<span class="phase-badge" style="background:var(--muted);color:#ccc">WAITING</span>';
           document.getElementById('track-info').textContent = '> TRACK: --- | 8 BULLS';
@@ -1401,10 +2243,12 @@
           break;
 
         case 'betting':
+          SFX.phaseChange();
           typeText(pd, '> PLACE YOUR BETS', 40);
           setTimeout(() => { pd.classList.add('hidden'); }, 2500);
           pi.innerHTML = '<span class="phase-badge betting">BETTING</span>';
-          bc.classList.add('visible');
+          trigBtn.textContent = '[ PLACE YOUR BETS ]';
+          trigBtn.classList.add('visible');
           renderBullCards();
           updatePoolDisplay();
           // Start bulls walking in
@@ -1413,7 +2257,6 @@
 
         case 'revealing': {
           pd.style.display = 'none';
-          bc.classList.remove('visible');
           ybp.classList.remove('visible');
           // Glitch transition before track reveal
           const crt = document.getElementById('crt-overlay');
@@ -1437,11 +2280,13 @@
         }
 
         case 'switching':
+          SFX.phaseChange();
           tr.classList.remove('visible');
           typeText(pd, '> SWITCH OR HOLD', 40);
           setTimeout(() => { pd.classList.add('hidden'); }, 2500);
           pi.innerHTML = '<span class="phase-badge switching">SWITCHING</span>';
-          bc.classList.add('visible');
+          trigBtn.textContent = RM.myBet ? '[ REVIEW / SWITCH ]' : '[ PLACE YOUR BETS ]';
+          trigBtn.classList.add('visible');
           showTrackBanner();
           renderBullCards();
           if (RM.myBet) {
@@ -1451,8 +2296,8 @@
           break;
 
         case 'racing':
+          SFX.raceHorn();
           pd.style.display = 'none';
-          bc.classList.remove('visible');
           ybp.classList.remove('visible');
           pi.innerHTML = '<span class="phase-badge racing">RACING</span>';
           // Reset camera to chase for race start
@@ -1465,6 +2310,7 @@
           break;
 
         case 'results':
+          SFX.phaseChange();
           pd.style.display = 'none';
           pi.innerHTML = '';
           renderResults();
@@ -1509,6 +2355,18 @@
       raceOver = false;
       nextRank = 1;
       countdownStarted = false;
+      // Reset camera to start line
+      camTrackX = 0; lastCamTrackX = 0;
+      cameraReady = false;
+      camera.position.set(-12, 6, 12);
+      controls.target.set(0, 1.5, 0);
+      camera.lookAt(controls.target);
+      gridHelper.position.x = 0;
+      trackGrid.position.x = 0;
+      speedLines.position.x = 0;
+      sun.position.x = 10;
+      camMode = 'chase'; controls.enabled = false;
+      updateCamButtons();
 
       const fbx = loadedModel;
       const animations = loadedAnimations;
@@ -1605,12 +2463,46 @@
       }
     }
 
+    // Create floating rank label sprite (1ST / 2ND / 3RD)
+    const rankLabels = [];
+    function createRankSprite(rank, color) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 256; canvas.height = 128;
+      const ctx2d = canvas.getContext('2d');
+      const text = rank === 1 ? '1ST' : rank === 2 ? '2ND' : '3RD';
+      const bgColor = rank === 1 ? '#ffb000' : rank === 2 ? '#c0c0c0' : '#cd7f32';
+      // Background box
+      ctx2d.fillStyle = bgColor;
+      ctx2d.roundRect ? ctx2d.roundRect(16, 8, 224, 112, 4) : ctx2d.fillRect(16, 8, 224, 112);
+      ctx2d.fill();
+      // Text
+      ctx2d.fillStyle = '#0a0a0a';
+      ctx2d.font = 'bold 80px monospace';
+      ctx2d.textAlign = 'center';
+      ctx2d.textBaseline = 'middle';
+      ctx2d.fillText(text, 128, 64);
+      // Border
+      ctx2d.strokeStyle = '#0a0a0a';
+      ctx2d.lineWidth = 4;
+      ctx2d.strokeRect(16, 8, 224, 112);
+
+      const tex = new THREE.CanvasTexture(canvas);
+      const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+      const sprite = new THREE.Sprite(mat);
+      sprite.scale.set(2.0, 1.0, 1);
+      sprite.renderOrder = 999;
+      return sprite;
+    }
+
     function cleanupBulls() {
       for (const bull of bulls) {
         scene.remove(bull.group);
         bull.mixer.stopAllAction();
       }
       bulls = [];
+      // Remove rank label sprites
+      for (const lbl of rankLabels) { scene.remove(lbl); lbl.material.map.dispose(); lbl.material.dispose(); }
+      rankLabels.length = 0;
     }
 
     function cleanupRace() {
@@ -1711,14 +2603,59 @@
         console.log(`Auto-detected rotation: ${(bestRotY * 180 / Math.PI).toFixed(0)}`);
       }
 
-      // Model loaded — start first race cycle
+      // Model loaded — show boot screen, wait for click to activate audio
       const pd = document.getElementById('phase-display');
-      pd.textContent = 'LFG!!!!';
-      pd.classList.add('lfg');
-      setTimeout(() => {
-        pd.classList.remove('lfg');
-        setPhase('waiting');
-      }, 1500);
+      pd.style.display = 'none';
+
+      const overlay = document.getElementById('start-overlay');
+      const bootEl = document.getElementById('boot-lines');
+      overlay.classList.remove('hidden');
+
+      // Animate boot lines
+      const bootMsgs = [
+        ['> MOONAD BULL RACE v1.0', 'ok'],
+        ['> gpu_renderer: ' + (renderer.info.render ? 'ACTIVE' : 'READY'), 'ok'],
+        ['> bull_model: LOADED (8 UNITS)', 'ok'],
+        ['> animation_clips: ' + loadedAnimations.length + ' LOADED', 'ok'],
+        ['> track_engine: READY', 'ok'],
+        ['> betting_contract: STANDBY', 'ok'],
+      ];
+      let bootIdx = 0;
+      function showNextBoot() {
+        if (bootIdx < bootMsgs.length) {
+          const [msg, status] = bootMsgs[bootIdx];
+          const line = document.createElement('div');
+          line.innerHTML = `${msg} <span class="ok">[${status.toUpperCase()}]</span>`;
+          bootEl.appendChild(line);
+          bootIdx++;
+          setTimeout(showNextBoot, 150);
+        }
+      }
+      showNextBoot();
+
+      // On click: activate audio → boot sound → LFG → start
+      overlay.addEventListener('click', function startClick() {
+        overlay.removeEventListener('click', startClick);
+        overlay.querySelector('.start-prompt').textContent = '> INITIALIZING...';
+        overlay.querySelector('.start-prompt').style.animation = 'none';
+
+        // Activate audio + play boot sound
+        SFX.bootUp();
+
+        // After boot sound finishes, show LFG
+        setTimeout(() => {
+          overlay.classList.add('hidden');
+          pd.style.display = 'block';
+          pd.textContent = 'LFG!!!!';
+          pd.classList.add('lfg');
+          SFX.lfg();
+
+          setTimeout(() => {
+            pd.classList.remove('lfg');
+            setPhase('waiting');
+          }, 1500);
+        }, 800);
+      });
 
     }, (progress) => {
       if (progress.total > 0) {
@@ -1777,6 +2714,9 @@
         updatePhaseTimer();
       }
 
+      // Animate bull preview in betting panel
+      updateBullPreview(dt);
+
       // ======== RACING PHASE ========
       if (bulls.length > 0 && raceStarted) {
         const raceTime = elapsed - raceStartTime;
@@ -1813,6 +2753,7 @@
               bull.idleAction.fadeOut(0.8); bull.lieStartAction.reset().fadeIn(0.8).play();
             }
             bull.group.position.x = bull.racePos;
+            if (bull.rankSprite) bull.rankSprite.position.x = bull.racePos;
             bull.mixer.update(dt);
             continue;
           }
@@ -1831,6 +2772,15 @@
             bull.finished = true;
             bull.finishTime = elapsed;
             bull.finishRank = nextRank++;
+            if (bull.finishRank <= 3) {
+              SFX.bullFinish();
+              // Float rank label above the bull
+              const rankSprite = createRankSprite(bull.finishRank, bull.color);
+              rankSprite.position.set(bull.racePos, 4.2, bull.laneZ);
+              scene.add(rankSprite);
+              rankLabels.push(rankSprite);
+              bull.rankSprite = rankSprite;
+            }
             if (bull.finishRank === 1) {
               const finTime = elapsed - raceStartTime;
               const avgSpeed = (FINISH_X / finTime).toFixed(1);
@@ -1957,6 +2907,11 @@
         if (keysPressed.has('a') || keysPressed.has('arrowleft')) move.addScaledVector(right, -spd);
         if (keysPressed.has('d') || keysPressed.has('arrowright')) move.addScaledVector(right, spd);
         camera.position.add(move); controls.target.add(move);
+      }
+
+      // Animate rank label bobbing
+      for (const lbl of rankLabels) {
+        lbl.position.y = 4.2 + Math.sin(elapsed * 2 + lbl.position.z) * 0.15;
       }
 
       if (camMode === 'free') controls.update();
