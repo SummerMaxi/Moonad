@@ -3020,9 +3020,9 @@
           results: '> next race in',
         };
         clockEl.textContent = `${phaseLabels[RM.phase] || '>'} ${timeStr}`;
-        // Tick sound once per second during betting/switching countdown
+        // Tick sound once per second during all timed phases
         const currentSec = Math.floor(remaining);
-        if ((RM.phase === 'betting' || RM.phase === 'switching') && remaining > 0 && currentSec !== _lastTickSec) {
+        if (remaining > 0 && currentSec !== _lastTickSec) {
           _lastTickSec = currentSec;
           SFX.clockTick();
         }
