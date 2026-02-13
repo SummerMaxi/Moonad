@@ -3139,6 +3139,20 @@
           break;
 
         case 'racing': {
+          // If race was never seeded, skip racing entirely — no results to show
+          if (!RM.seeded) {
+            typeText(pd, '> NO SEED — RACE SKIPPED', 30);
+            pi.innerHTML = '<span class="phase-badge" style="background:var(--muted);color:#ccc">NO SEED</span>';
+            ybp.classList.remove('visible');
+            // Wait briefly then jump to next race
+            setTimeout(() => {
+              if (RM.phase === 'racing') {
+                cleanupRace();
+                setPhase('waiting');
+              }
+            }, 4000);
+            break;
+          }
           SFX.raceHorn();
           pd.style.display = 'none';
           ybp.classList.remove('visible');
@@ -3147,7 +3161,7 @@
           updateCamButtons();
           hideBullStatPopup();
           // Spawn bulls if not already (mid-race join)
-          if (loadedModel && bulls.length === 0 && RM.seeded) spawnBulls();
+          if (loadedModel && bulls.length === 0) spawnBulls();
           computeRaceResults();
           // Check if joining mid-race — fast-forward bull positions
           const live = getLiveState();
