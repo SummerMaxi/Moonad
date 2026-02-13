@@ -2972,7 +2972,8 @@
           // Counts down to end of contract SWITCHING phase
           return Math.max(0, liveSwitchingEnd - live.elapsed);
         case 'racing':
-          return 999; // Self-terminating via animation completion
+          // Use UTC cycle time — if cycle ends, force transition to next race
+          return Math.max(0, liveCycleDuration - live.elapsed);
         case 'results':
           // Counts down to end of cycle (next race starts)
           return Math.max(0, liveCycleDuration - live.elapsed);
@@ -3025,6 +3026,7 @@
           case 'betting': setPhase('revealing'); break;
           case 'revealing': setPhase('switching'); break;
           case 'switching': setPhase('racing'); break;
+          case 'racing': cleanupRace(); setPhase('waiting'); break;
           case 'results': cleanupRace(); setPhase('waiting'); break;
         }
       }
@@ -3434,7 +3436,7 @@
       const elapsed = clock.getElapsedTime();
 
       // Phase timer
-      if (RM.phase !== 'loading' && RM.phase !== 'racing') {
+      if (RM.phase !== 'loading') {
         updatePhaseTimer();
       }
 
