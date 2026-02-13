@@ -9,7 +9,7 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IEntropyV2} from "@pythnetwork/entropy-sdk-solidity/IEntropyV2.sol";
 import {IEntropyConsumer} from "@pythnetwork/entropy-sdk-solidity/IEntropyConsumer.sol";
 
-contract BullRaceBetting is ReentrancyGuard, Ownable, Pausable, IEntropyConsumer {
+contract Moonad is ReentrancyGuard, Ownable, Pausable, IEntropyConsumer {
     using SafeERC20 for IERC20;
 
     // ======== CONSTANTS ========
