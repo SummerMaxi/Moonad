@@ -180,13 +180,14 @@
     #wallet-btn.connected { border-color: var(--muted); color: var(--muted); }
 
     #seed-btn {
-      display: none; position: fixed; top: 6px; left: 12px;
-      background: rgba(10, 10, 10, 0.9);
-      border: 1px solid var(--secondary); color: var(--secondary);
-      font-family: var(--font); font-size: 10px;
-      padding: 4px 10px; cursor: pointer; letter-spacing: 1px;
+      display: none; position: fixed; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(10, 10, 10, 0.95);
+      border: 2px solid var(--secondary); color: var(--secondary);
+      font-family: var(--font); font-size: 18px; font-weight: bold;
+      padding: 16px 40px; cursor: pointer; letter-spacing: 3px;
       z-index: 55; pointer-events: auto;
-      text-shadow: 0 0 5px rgba(255, 176, 0, 0.5);
+      text-shadow: 0 0 10px rgba(255, 176, 0, 0.6);
       animation: pulse-border 1.5s ease-in-out infinite;
     }
     #seed-btn:hover { background: var(--secondary); color: var(--bg); text-shadow: none; }
