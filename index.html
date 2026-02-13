@@ -3815,9 +3815,11 @@
       // ======== MATRIX GREETING SEQUENCE ========
       const greetingEl = document.getElementById('matrix-greeting');
       const pillChoice = document.getElementById('pill-choice');
+      let audioReady = false; // set true after user click
 
       // Matrix-style typing sound (soft blip per character)
       function matrixKeystroke() {
+        if (!audioReady) return; // skip before user gesture
         try {
           const ctx = ensureAudio(); const t = ctx.currentTime;
           const osc = ctx.createOscillator(); const g = ctx.createGain();
@@ -3854,50 +3856,18 @@
       // Require a click to activate audio (browser policy), then start greeting
       greetingEl.innerHTML = '<span style="opacity:0.4;font-size:14px;cursor:pointer;animation:blink 1.2s step-end infinite">CLICK TO ENTER</span>';
       overlay.style.cursor = 'pointer';
-      // Soft ambient rain sound (looping filtered noise)
-      let rainGain = null;
-      function startRainAmbience() {
-        const ctx = ensureAudio();
-        // Create long noise buffer for looping
-        const dur = 2;
-        const buf = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
-        const d = buf.getChannelData(0);
-        for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-        const noise = ctx.createBufferSource();
-        noise.buffer = buf;
-        noise.loop = true;
-        // Bandpass for a soft digital patter
-        const bp = ctx.createBiquadFilter();
-        bp.type = 'bandpass'; bp.frequency.value = 3000; bp.Q.value = 0.3;
-        // High shelf to add subtle shimmer
-        const hs = ctx.createBiquadFilter();
-        hs.type = 'highshelf'; hs.frequency.value = 6000; hs.gain.value = -6;
-        rainGain = ctx.createGain();
-        rainGain.gain.setValueAtTime(0.001, ctx.currentTime);
-        rainGain.gain.linearRampToValueAtTime(0.035, ctx.currentTime + 1.5);
-        noise.connect(bp); bp.connect(hs); hs.connect(rainGain); rainGain.connect(ctx.destination);
-        noise.start();
-        return noise;
-      }
-      function fadeOutRainAmbience() {
-        if (rainGain) {
-          const ctx = ensureAudio();
-          rainGain.gain.linearRampToValueAtTime(0.001, ctx.currentTime + 1.2);
-        }
-      }
 
       overlay.addEventListener('click', function activateOnce() {
         overlay.removeEventListener('click', activateOnce);
         overlay.style.cursor = '';
         ensureAudio();
-        startRainAmbience();
+        audioReady = true;
         SFX.bootUp();
         greetingEl.innerHTML = '';
         setTimeout(() => {
           matrixType(greetingEl, 'Hello, anon.', 80, () => {
             // Stop rain, fade to black
             matrixRainActive = false;
-            fadeOutRainAmbience();
             rainCanvas.style.transition = 'opacity 1s ease';
             rainCanvas.style.opacity = '0';
             setTimeout(() => {
