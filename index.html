@@ -2996,6 +2996,7 @@
       }
     }
 
+    let _lastTickSec = -1;
     function updatePhaseTimer() {
       const remaining = getPhaseTimeRemaining();
       if (RM.phase === 'waiting' || RM.phase === 'betting' || RM.phase === 'switching' || RM.phase === 'results') {
@@ -3010,8 +3011,10 @@
           results: '> next race in',
         };
         clockEl.textContent = `${phaseLabels[RM.phase] || '>'} ${timeStr}`;
-        // Tick sound during betting/switching countdown
-        if ((RM.phase === 'betting' || RM.phase === 'switching') && remaining > 0) {
+        // Tick sound once per second during betting/switching countdown
+        const currentSec = Math.floor(remaining);
+        if ((RM.phase === 'betting' || RM.phase === 'switching') && remaining > 0 && currentSec !== _lastTickSec) {
+          _lastTickSec = currentSec;
           SFX.clockTick();
         }
         // Also update the next-race-timer in results panel
