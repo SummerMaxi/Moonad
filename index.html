@@ -2442,15 +2442,26 @@
         noise.start(t); noise.stop(t + 0.02);
       },
 
-      // Clock tick — subtle ticking for countdown timer
+      // Clock tick — mechanical clock/metronome tick for countdown
       clockTick() {
         const ctx = ensureAudio(); const t = ctx.currentTime;
+        // Sharp noise transient — like a clock mechanism
+        const noise = ctx.createBufferSource();
+        noise.buffer = _noiseBuf(ctx, 0.025);
+        const bp = ctx.createBiquadFilter();
+        bp.type = 'bandpass'; bp.frequency.value = 2000; bp.Q.value = 5;
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.15, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.02);
+        noise.connect(bp); bp.connect(ng); ng.connect(ctx.destination);
+        noise.start(t); noise.stop(t + 0.025);
+        // Low woody knock body
         const osc = ctx.createOscillator(); const g = ctx.createGain();
-        osc.type = 'sine'; osc.frequency.value = 800;
-        g.gain.setValueAtTime(0.03, t);
-        g.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+        osc.type = 'triangle'; osc.frequency.value = 400;
+        g.gain.setValueAtTime(0.08, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
         osc.connect(g); g.connect(ctx.destination);
-        osc.start(t); osc.stop(t + 0.05);
+        osc.start(t); osc.stop(t + 0.035);
       },
 
       // UI tick — carousel nav, indicator dots
