@@ -2935,6 +2935,7 @@
           trigBtn.classList.add('visible');
           showTrackBanner();
           renderBullCards();
+          if (loadedModel && RM.seeded && bulls.length === 0) spawnBulls();
           if (RM.myBet) {
             ybp.classList.add('visible');
             showWarnings();
