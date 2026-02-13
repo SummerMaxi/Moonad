@@ -214,6 +214,7 @@ Copy this script. Set env vars. Plug in your own `chooseBull()` function. Run it
 | `PRIVATE_KEY` | Yes      | Wallet private key (0x prefix)           |
 | `BET_MON`     | No       | Bet amount in MON (default: `0.05`)      |
 | `RPC_URL`     | No       | Monad RPC (default: `https://rpc.monad.xyz`) |
+| `SEED_RACES`  | No       | Set to `true` to seed races and earn 2% of pool |
 
 ### Install Dependencies
 
@@ -237,6 +238,7 @@ const { ethers } = require("ethers");
 const RPC_URL = process.env.RPC_URL || "https://rpc.monad.xyz";
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
 const BET_MON = process.env.BET_MON || "0.05";
+const SEED_RACES = process.env.SEED_RACES === "true";
 const CONTRACT = "0x5cDe7556da1818aE4880B260cF4B55c93ffD4644";
 const ZERO_ADDR = "0x0000000000000000000000000000000000000000";
 
@@ -266,6 +268,11 @@ const ABI = [
   "function claimWinnings(uint256 raceId)",
   "function claimRefund(uint256 raceId)",
   "function resolveRace(uint256 raceId)",
+  "function getEntropyFee() view returns (uint128)",
+  "function requestRaceSeed(uint256 raceId) payable",
+  "function claimSeederReward(address token)",
+  "function getSeederBalance(address seeder, address token) view returns (uint256)",
+  "function getRaceSeeder(uint256 raceId) view returns (address)",
   "event BetPlaced(uint256 indexed raceId, address indexed bettor, uint8 bullId, address token, uint256 amount)",
   "event RaceSeeded(uint256 indexed raceId, uint8 trackType, bytes32 seed)",
 ];
@@ -356,6 +363,7 @@ async function main() {
 
   console.log(`[MOONAD] Agent wallet: ${wallet.address}`);
   console.log(`[MOONAD] Bet amount: ${BET_MON} MON`);
+  console.log(`[MOONAD] Seeding: ${SEED_RACES ? "ON (earning 2% rewards)" : "OFF"}`);
 
   const balance = await provider.getBalance(wallet.address);
   console.log(`[MOONAD] Balance: ${ethers.formatEther(balance)} MON`);
@@ -433,6 +441,38 @@ async function main() {
             console.error(`[MOONAD] Bet failed: ${err.reason || err.message}`);
           }
         }
+      }
+
+      // ---- SEED the race if enabled and not yet seeded ----
+      if (SEED_RACES && (phase === 0 || phase === 1)) {
+        const seedData = await contract.getRaceSeedData(raceId);
+        if (!seedData.seeded) {
+          const seeder = await contract.getRaceSeeder(raceId);
+          if (seeder === ZERO_ADDR) {
+            try {
+              const fee = await contract.getEntropyFee();
+              const tx = await contract.requestRaceSeed(raceId, { value: fee });
+              console.log(`[MOONAD] Seeding race #${raceId}... TX: ${tx.hash}`);
+              await tx.wait();
+              console.log(`[MOONAD] Race seeded! Earning 2% of pool as reward.`);
+            } catch (err) {
+              console.error(`[MOONAD] Seed failed: ${err.reason || err.message}`);
+            }
+          }
+        }
+      }
+
+      // ---- Claim accumulated seeder rewards (check every 50 races) ----
+      if (SEED_RACES && phase === 0 && Number(raceId) % 50 === 0) {
+        try {
+          const reward = await contract.getSeederBalance(wallet.address, ZERO_ADDR);
+          if (reward > 0n) {
+            const tx = await contract.claimSeederReward(ZERO_ADDR);
+            console.log(`[MOONAD] Claiming seeder reward: ${ethers.formatEther(reward)} MON...`);
+            await tx.wait();
+            console.log(`[MOONAD] Seeder reward claimed!`);
+          }
+        } catch { /* no reward yet */ }
       }
 
       // ---- CLOSED or RESOLVED: try to claim winnings (once per race) ----
@@ -571,6 +611,7 @@ This strategy balances **win probability** (from stats) against **odds** (from p
 ```bash
 export PRIVATE_KEY="0xYOUR_PRIVATE_KEY_HERE"
 export BET_MON="0.05"
+export SEED_RACES="true"   # optional: seed races to earn 2% of pool
 
 node moonad-agent.js
 ```
@@ -578,9 +619,11 @@ node moonad-agent.js
 Your agent will:
 1. Connect to Monad
 2. Wait for the next betting window
-3. Call your `chooseBull()` with full race data
-4. Place the bet
-5. Claim winnings if it wins
-6. Repeat forever
+3. (If `SEED_RACES=true`) Seed the race via VRF — earns **2% of pool** as reward
+4. Call your `chooseBull()` with full race data
+5. Place the bet
+6. Claim winnings if it wins
+7. Periodically claim accumulated seeder rewards
+8. Repeat forever
 
 **Watch it live:** https://moonad.fun
