@@ -1750,8 +1750,8 @@
           updatePoolDisplay();
           if (RM.phase === 'betting' || RM.phase === 'switching') renderBullCards();
 
-          // In CLOSED/results phase: check if race has been resolved on-chain
-          if ((RM.phase === 'racing' || RM.phase === 'results') && !RM.raceResolved) {
+          // In results phase: check if race has been resolved on-chain (for display accuracy)
+          if (RM.phase === 'results' && !RM.raceResolved) {
             const info = await contract.getRaceInfo(live.raceId);
             if (info.resolved) {
               RM.raceResolved = true;
@@ -1759,10 +1759,7 @@
               RM.finishOrder = Array.from(results.finishOrder).map(Number);
               RM.scores = new Array(NUM_BULLS).fill(0);
               for (let r = 0; r < NUM_BULLS; r++) RM.scores[RM.finishOrder[r]] = NUM_BULLS - r;
-              if (RM.phase === 'results') { renderResults(); updateClaimBanner(); }
-            } else {
-              // Try to auto-resolve if we have a wallet
-              tryAutoResolve(live.raceId);
+              renderResults(); updateClaimBanner();
             }
           }
         } catch (e) {
@@ -1778,37 +1775,9 @@
       }
     }
 
-    /** Auto-resolve a race on-chain (permissionless — anyone pays gas) */
-    let _autoResolving = false;
-    async function tryAutoResolve(raceId) {
-      if (_autoResolving || RM.raceResolved) return;
-      if (!contractWrite || !RM.seeded) return; // need wallet + seed
-      _autoResolving = true;
-      try {
-        console.log(`[AutoResolve] Calling resolveRace(${raceId})...`);
-        const tx = await contractWrite.resolveRace(raceId);
-        await tx.wait();
-        console.log(`[AutoResolve] Race ${raceId} resolved on-chain`);
-        RM.raceResolved = true;
-        // Reload on-chain results
-        const results = await contract.getRaceResults(raceId);
-        RM.finishOrder = Array.from(results.finishOrder).map(Number);
-        RM.scores = new Array(NUM_BULLS).fill(0);
-        for (let r = 0; r < NUM_BULLS; r++) RM.scores[RM.finishOrder[r]] = NUM_BULLS - r;
-        if (RM.phase === 'results') {
-          renderResults();
-          updateClaimBanner();
-        }
-      } catch (e) {
-        // Already resolved by someone else, or other error
-        if (e.message && e.message.includes('Already resolved')) {
-          RM.raceResolved = true;
-        }
-        console.error('[AutoResolve] Failed:', e.reason || e.message);
-      } finally {
-        _autoResolving = false;
-      }
-    }
+    // No frontend auto-resolve needed — lazy resolution in contract handles it.
+    // claimWinnings() auto-resolves on first winner's claim.
+    function tryAutoResolve(raceId) { /* no-op */ }
 
     function computeRaceResults() {
       RM.scores = [];
