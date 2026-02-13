@@ -1116,6 +1116,7 @@
       switchMode: false,   // true when user is picking a new bull to switch to
       seeded: false,       // whether current race has VRF seed
       raceResolved: false, // whether current race is resolved on-chain
+      claimed: false,      // whether user has claimed winnings this race
     };
 
     // ======== SCENE ========
@@ -2090,7 +2091,11 @@
           const payout = myPool > 0 ? (getTotalPool() * 0.9) * (RM.myBet.amount / myPool) : 0;
           const profit = payout - RM.myBet.amount;
           html += `<div class="your-result won">> YOU WON! +${profit.toFixed(2)} MON (${payout.toFixed(2)} total)</div>`;
-          html += `<button class="claim-btn" onclick="claimWinnings()">[ CLAIM ${payout.toFixed(2)} MON ]</button>`;
+          if (RM.claimed) {
+            html += `<button class="claim-btn" style="border-color:var(--primary);color:var(--primary);cursor:default" disabled>[ CLAIMED ✓ ]</button>`;
+          } else {
+            html += `<button class="claim-btn" onclick="claimWinnings()">[ CLAIM ${payout.toFixed(2)} MON ]</button>`;
+          }
         } else {
           html += `<div class="your-result lost">> LOST: -${RM.myBet.amount.toFixed(2)} MON (your bull: #${myRank + 1})</div>`;
         }
@@ -2243,6 +2248,7 @@
         const tx = await contractWrite.claimWinnings(RM.raceId);
         SFX.chaChing();
         await tx.wait();
+        RM.claimed = true;
         if (provider && userAddress) {
           const bal = await provider.getBalance(userAddress);
           RM.walletBalance = parseFloat(ethers.formatEther(bal));
@@ -2250,6 +2256,7 @@
           document.getElementById('wallet-btn').textContent = `${short} | ${RM.walletBalance.toFixed(1)} MON`;
         }
         updateClaimBanner();
+        renderResults();
         updateBalanceDisplay();
       } catch (err) {
         SFX.error();
@@ -2269,11 +2276,22 @@
 
     function updateClaimBanner() {
       const banner = document.getElementById('claim-banner');
-      // Show claim banner if user won (contract auto-resolves on claim)
       if (RM.myBet && RM.phase === 'results' && RM.walletConnected && RM.finishOrder[0] === RM.myBet.bullIndex) {
         const myPool = getTotalPoolForBull(RM.myBet.bullIndex);
         const payout = myPool > 0 ? (getTotalPool() * 0.9) * (RM.myBet.amount / myPool) : 0;
-        banner.textContent = `> UNCLAIMED: ${payout.toFixed(2)} MON  [ CLAIM ]`;
+        if (RM.claimed) {
+          banner.textContent = `> CLAIMED: ${payout.toFixed(2)} MON  ✓`;
+          banner.style.borderColor = 'var(--primary)';
+          banner.style.color = 'var(--primary)';
+          banner.style.cursor = 'default';
+          banner.onclick = null;
+        } else {
+          banner.textContent = `> UNCLAIMED: ${payout.toFixed(2)} MON  [ CLAIM ]`;
+          banner.style.borderColor = '';
+          banner.style.color = '';
+          banner.style.cursor = 'pointer';
+          banner.onclick = claimWinnings;
+        }
         banner.classList.add('visible');
       } else {
         banner.classList.remove('visible');
@@ -2872,6 +2890,7 @@
           const live = getLiveState();
           RM.raceId = live.raceId;
           RM.liveRaceId = live.raceId;
+          RM.claimed = false;
           liveRaceDataLoaded = false;
           generateRaceData();
           document.querySelector('#title-bar .title-text').textContent = `> MOONAD // LIVE RACE #${RM.raceId}`;
