@@ -3481,8 +3481,8 @@
       const dt = Math.min(clock.getDelta(), 0.05);
       const elapsed = clock.getElapsedTime();
 
-      // Phase timer
-      if (RM.phase !== 'loading') {
+      // Phase timer (only after boot sequence)
+      if (gameStarted && RM.phase !== 'loading') {
         updatePhaseTimer();
       }
 
