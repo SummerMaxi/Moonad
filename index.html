@@ -3197,6 +3197,13 @@
 
     function getPhaseTimeRemaining() {
       const live = getLiveState();
+      // If the cycle has rolled over (new race started), advance
+      // Give results phase at least 5s so user can see who won
+      if ((RM.phase === 'racing' || RM.phase === 'results') && live.raceId !== RM.raceId) {
+        if (RM.phase === 'racing') return 0;
+        const resultsDuration = clock.getElapsedTime() - RM.phaseStart;
+        return Math.max(0, 5 - resultsDuration);
+      }
       switch (RM.phase) {
         case 'waiting':
           // Brief local loading phase (6s max)
