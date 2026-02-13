@@ -2442,6 +2442,17 @@
         noise.start(t); noise.stop(t + 0.02);
       },
 
+      // Clock tick — subtle ticking for countdown timer
+      clockTick() {
+        const ctx = ensureAudio(); const t = ctx.currentTime;
+        const osc = ctx.createOscillator(); const g = ctx.createGain();
+        osc.type = 'sine'; osc.frequency.value = 800;
+        g.gain.setValueAtTime(0.03, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+        osc.connect(g); g.connect(ctx.destination);
+        osc.start(t); osc.stop(t + 0.05);
+      },
+
       // UI tick — carousel nav, indicator dots
       tick() {
         const ctx = ensureAudio(); const t = ctx.currentTime;
@@ -2991,6 +3002,10 @@
           results: '> next race in',
         };
         clockEl.textContent = `${phaseLabels[RM.phase] || '>'} ${timeStr}`;
+        // Tick sound during betting/switching countdown
+        if ((RM.phase === 'betting' || RM.phase === 'switching') && remaining > 0) {
+          SFX.clockTick();
+        }
         // Also update the next-race-timer in results panel
         if (RM.phase === 'results') {
           const nrt = document.getElementById('next-race-timer');
