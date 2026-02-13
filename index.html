@@ -2961,6 +2961,8 @@
           camMode = 'chase'; controls.enabled = false; cameraReady = false;
           updateCamButtons();
           hideBullStatPopup();
+          // Spawn bulls if not already (mid-race join)
+          if (loadedModel && bulls.length === 0 && RM.seeded) spawnBulls();
           // Compute results and start race
           computeRaceResults();
           startRace();
