@@ -164,29 +164,29 @@
       transition: all 0.3s ease; position: relative;
     }
     #btn-human {
-      border: 2px solid #ff2020; color: #ff2020;
-      text-shadow: 0 0 8px rgba(255, 32, 32, 0.5);
-    }
-    #btn-human:hover {
-      background: #ff2020; color: #000;
-      text-shadow: none;
-      box-shadow: 0 0 20px rgba(255, 32, 32, 0.6), 0 0 40px rgba(255, 32, 32, 0.3);
-    }
-    #btn-agent {
       border: 2px solid #2080ff; color: #2080ff;
       text-shadow: 0 0 8px rgba(32, 128, 255, 0.5);
     }
-    #btn-agent:hover {
+    #btn-human:hover {
       background: #2080ff; color: #000;
       text-shadow: none;
       box-shadow: 0 0 20px rgba(32, 128, 255, 0.6), 0 0 40px rgba(32, 128, 255, 0.3);
+    }
+    #btn-agent {
+      border: 2px solid #ff2020; color: #ff2020;
+      text-shadow: 0 0 8px rgba(255, 32, 32, 0.5);
+    }
+    #btn-agent:hover {
+      background: #ff2020; color: #000;
+      text-shadow: none;
+      box-shadow: 0 0 20px rgba(255, 32, 32, 0.6), 0 0 40px rgba(255, 32, 32, 0.3);
     }
     .pill-desc {
       font-size: 9px; color: rgba(255,255,255,0.3); letter-spacing: 1px;
       margin-top: 6px; text-align: center;
     }
-    #pill-human-desc { color: rgba(255, 32, 32, 0.4); }
-    #pill-agent-desc { color: rgba(32, 128, 255, 0.4); }
+    #pill-human-desc { color: rgba(32, 128, 255, 0.4); }
+    #pill-agent-desc { color: rgba(255, 32, 32, 0.4); }
     .boot-lines {
       font-size: 12px; color: var(--primary); text-align: left;
       margin-bottom: 24px; line-height: 1.8;
@@ -905,11 +905,11 @@
         <div id="pill-label">CHOOSE YOUR PATH</div>
         <div id="pill-buttons">
           <div style="text-align:center">
-            <button id="btn-human" class="pill-btn">RED PILL</button>
+            <button id="btn-human" class="pill-btn">BLUE PILL</button>
             <div class="pill-desc" id="pill-human-desc">ENTER THE RACE</div>
           </div>
           <div style="text-align:center">
-            <button id="btn-agent" class="pill-btn">BLUE PILL</button>
+            <button id="btn-agent" class="pill-btn">RED PILL</button>
             <div class="pill-desc" id="pill-agent-desc">LET THE BOT PLAY</div>
           </div>
         </div>
@@ -3805,18 +3805,32 @@
       const greetingEl = document.getElementById('matrix-greeting');
       const pillChoice = document.getElementById('pill-choice');
 
-      // Type out greeting with Matrix-style delay
+      // Matrix-style typing sound (soft blip per character)
+      function matrixKeystroke() {
+        try {
+          const ctx = ensureAudio(); const t = ctx.currentTime;
+          const osc = ctx.createOscillator(); const g = ctx.createGain();
+          osc.type = 'square';
+          osc.frequency.value = 1200 + Math.random() * 600;
+          g.gain.setValueAtTime(0.04, t);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
+          osc.connect(g); g.connect(ctx.destination);
+          osc.start(t); osc.stop(t + 0.035);
+        } catch(e) {}
+      }
+
+      // Type out greeting with Matrix-style delay + sound
       function matrixType(el, text, speed, cb) {
         let i = 0;
         el.innerHTML = '<span class="cursor"></span>';
         function tick() {
           if (i < text.length) {
             el.innerHTML = text.slice(0, i + 1) + '<span class="cursor"></span>';
+            matrixKeystroke();
             i++;
             const delay = text[i - 1] === '.' ? speed * 6 : text[i - 1] === ',' ? speed * 3 : speed;
             setTimeout(tick, delay);
           } else {
-            // Keep cursor blinking for a moment, then callback
             setTimeout(() => {
               el.innerHTML = text + '<span class="cursor"></span>';
               if (cb) cb();
@@ -3827,12 +3841,21 @@
       }
 
       // Start the greeting after a brief rain-only moment
+      // First click anywhere activates audio context (browser policy)
+      let audioActivated = false;
+      overlay.addEventListener('click', function activateOnce() {
+        if (!audioActivated) { ensureAudio(); audioActivated = true; }
+      }, { capture: true });
+
       setTimeout(() => {
         matrixType(greetingEl, 'Hello, visitor.', 80, () => {
+          // Stop rain, fade to black
+          matrixRainActive = false;
+          rainCanvas.style.transition = 'opacity 1s ease';
+          rainCanvas.style.opacity = '0';
           setTimeout(() => {
             greetingEl.innerHTML = 'Hello, visitor.';
             pillChoice.classList.add('visible');
-            // Force reflow then set opacity
             pillChoice.offsetHeight;
             pillChoice.style.opacity = '1';
           }, 600);
@@ -3850,8 +3873,8 @@
         osc.connect(g); g.connect(ctx.destination);
         osc.start(t); osc.stop(t + 0.15);
       }
-      document.getElementById('btn-human').addEventListener('mouseenter', () => playPillHover(true));
-      document.getElementById('btn-agent').addEventListener('mouseenter', () => playPillHover(false));
+      document.getElementById('btn-human').addEventListener('mouseenter', () => playPillHover(false));
+      document.getElementById('btn-agent').addEventListener('mouseenter', () => playPillHover(true));
 
       // ======== PILL SELECT SOUND ========
       function playPillSelect(isRed) {
@@ -3949,18 +3972,18 @@
         showNextBoot();
       }
 
-      // Agent button → redirect to skill.md
+      // Agent button (red pill) → redirect to skill.md
       document.getElementById('btn-agent').addEventListener('click', function() {
         ensureAudio();
-        playPillSelect(false);
+        playPillSelect(true);
         setTimeout(() => { window.location.href = '/skill.md'; }, 500);
       });
 
-      // Human button → activate audio → boot sequence → start
+      // Human button (blue pill) → activate audio → boot sequence → start
       document.getElementById('btn-human').addEventListener('click', function startClick() {
         document.getElementById('btn-human').removeEventListener('click', startClick);
         ensureAudio();
-        playPillSelect(true);
+        playPillSelect(false);
         setTimeout(startBootSequence, 600);
       });
 
