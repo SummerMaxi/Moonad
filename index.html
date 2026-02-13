@@ -1921,9 +1921,16 @@
           btnHtml = `<button class="carousel-bet-btn" style="border-color:var(--secondary);color:var(--secondary)" onclick="confirmSwitch(${i})">[ SWITCH TO ${bc.name.toUpperCase()} ]</button>`;
           btnHtml += `<div style="color:var(--muted);font-size:9px;margin-top:4px;text-align:center">5% fee \u2192 ${remaining} MON</div>`;
         }
+      } else if (isMyBet && RM.phase === 'switching') {
+        btnHtml = `<button class="carousel-bet-btn placed">[ BET PLACED \u2713 ]</button>`;
+        btnHtml += `<div style="color:var(--secondary);font-size:10px;margin-top:6px;text-align:center">YOUR BET: ${RM.myBet.amount.toFixed(2)} MON</div>`;
+        btnHtml += `<button class="carousel-bet-btn" style="border-color:var(--secondary);color:var(--secondary);margin-top:8px" onclick="openSwitchMode()">[ SWITCH BET ] (5% FEE)</button>`;
       } else if (isMyBet) {
         btnHtml = `<button class="carousel-bet-btn placed">[ BET PLACED \u2713 ]</button>`;
         btnHtml += `<div style="color:var(--secondary);font-size:10px;margin-top:6px;text-align:center">YOUR BET: ${RM.myBet.amount.toFixed(2)} MON</div>`;
+      } else if (!RM.myBet && RM.walletConnected && RM.phase === 'switching') {
+        // Switching phase but no bet — can still place a new bet
+        btnHtml = `<button class="carousel-bet-btn" onclick="openBetModal(${i})">[ BET ON ${bc.name.toUpperCase()} ]</button>`;
       } else if (!RM.myBet && RM.walletConnected) {
         btnHtml = `<button class="carousel-bet-btn" onclick="openBetModal(${i})">[ BET ON ${bc.name.toUpperCase()} ]</button>`;
       } else if (RM.myBet && RM.walletConnected) {
