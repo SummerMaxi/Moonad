@@ -3849,13 +3849,13 @@
       }, { capture: true });
 
       setTimeout(() => {
-        matrixType(greetingEl, 'Hello, visitor.', 80, () => {
+        matrixType(greetingEl, 'Hello, anon.', 80, () => {
           // Stop rain, fade to black
           matrixRainActive = false;
           rainCanvas.style.transition = 'opacity 1s ease';
           rainCanvas.style.opacity = '0';
           setTimeout(() => {
-            greetingEl.innerHTML = 'Hello, visitor.';
+            greetingEl.innerHTML = 'Hello, anon.';
             pillChoice.classList.add('visible');
             pillChoice.offsetHeight;
             pillChoice.style.opacity = '1';
