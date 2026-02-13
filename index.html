@@ -2449,8 +2449,8 @@
         // Sharp attack click
         const osc = ctx.createOscillator(); const g = ctx.createGain();
         osc.type = 'sine'; osc.frequency.value = 1000;
-        g.gain.setValueAtTime(0.04, t);
-        g.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+        g.gain.setValueAtTime(0.02, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
         osc.connect(g); g.connect(ctx.destination);
         osc.start(t); osc.stop(t + 0.06);
       },
@@ -3003,6 +3003,7 @@
     }
 
     let _lastTickSec = -1;
+    let gameStarted = false;
     function updatePhaseTimer() {
       const remaining = getPhaseTimeRemaining();
       if (RM.phase === 'waiting' || RM.phase === 'betting' || RM.phase === 'switching' || RM.phase === 'results') {
@@ -3017,9 +3018,9 @@
           results: '> next race in',
         };
         clockEl.textContent = `${phaseLabels[RM.phase] || '>'} ${timeStr}`;
-        // Tick sound once per second during all timed phases
+        // Tick sound once per second (only after boot sequence)
         const currentSec = Math.floor(remaining);
-        if (remaining > 0 && currentSec !== _lastTickSec) {
+        if (gameStarted && remaining > 0 && currentSec !== _lastTickSec) {
           _lastTickSec = currentSec;
           SFX.clockTick();
         }
@@ -3418,6 +3419,7 @@
               SFX.lfg();
               setTimeout(() => {
                 pd.classList.remove('lfg');
+                gameStarted = true;
                 syncToLivePhase();
               }, 1500);
             }, 400);
