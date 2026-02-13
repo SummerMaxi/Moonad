@@ -193,6 +193,15 @@
     #seed-btn:hover { background: var(--secondary); color: var(--bg); text-shadow: none; }
     #seed-btn.hidden { display: none; }
     #seed-btn.visible { display: block; }
+    .seed-reward-text {
+      font-size: 10px; font-weight: 400; letter-spacing: 1px;
+      color: var(--secondary); opacity: 0.7; margin-top: 8px;
+    }
+    .seed-vrf-text {
+      font-size: 10px; font-weight: 400; letter-spacing: 1px;
+      color: var(--primary); opacity: 0.6; margin-top: 6px;
+      animation: blink 0.6s step-end infinite;
+    }
 
     /* ======== NEW: Bull Stat Cards (bottom panel) ======== */
     #bull-cards {
@@ -734,7 +743,7 @@
   </div>
 
   <div id="claim-banner" onclick="claimWinnings()"></div>
-  <div id="seed-btn" onclick="seedRace()">[ SEED RACE ]</div>
+  <div id="seed-btn" onclick="seedRace()">[ SEED RACE ]<div class="seed-reward-text">2% of race earnings go to seeders</div><div class="seed-vrf-text">> AWAITING VRF SEED...</div></div>
   <div id="wallet-btn" onclick="connectWallet()">[ CONNECT WALLET ]</div>
 
   <div id="track-banner">
@@ -1535,11 +1544,14 @@
 
     function updateSeedButton() {
       const btn = document.getElementById('seed-btn');
+      const pd = document.getElementById('phase-display');
       const live = getLiveState();
       // Show seed button only during BETTING/SWITCHING if not yet seeded
       if (!RM.seeded && (live.contractPhase === 'BETTING' || live.contractPhase === 'SWITCHING')) {
         btn.classList.add('visible');
         btn.classList.remove('hidden');
+        // Hide phase display to prevent overlap
+        pd.classList.add('hidden');
       } else {
         btn.classList.remove('visible');
         btn.classList.add('hidden');
@@ -1552,6 +1564,10 @@
       typeText(pd, '> BULLS GENERATED — PLACE YOUR BETS', 30);
       setTimeout(() => { pd.classList.add('hidden'); }, 3000);
       if (RM.phase === 'betting' || RM.phase === 'switching') {
+        // Show bet trigger now that bulls are generated
+        const trigBtn = document.getElementById('bet-trigger-btn');
+        trigBtn.textContent = RM.myBet ? '[ REVIEW BETS ]' : '[ PLACE YOUR BETS ]';
+        trigBtn.classList.add('visible');
         renderBullCards();
         updatePoolDisplay();
         if (document.getElementById('betting-panel').classList.contains('visible')) {
@@ -2426,15 +2442,16 @@
         noise.start(t); noise.stop(t + 0.02);
       },
 
-      // Clock tick — clean, soft pop (once per second)
+      // Clock tick — audible click (once per second)
       clockTick() {
         const ctx = ensureAudio(); const t = ctx.currentTime;
+        // Sharp attack click
         const osc = ctx.createOscillator(); const g = ctx.createGain();
-        osc.type = 'sine'; osc.frequency.value = 60;
-        g.gain.setValueAtTime(0.05, t);
-        g.gain.setValueAtTime(0, t + 0.008);
+        osc.type = 'square'; osc.frequency.value = 1000;
+        g.gain.setValueAtTime(0.18, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
         osc.connect(g); g.connect(ctx.destination);
-        osc.start(t); osc.stop(t + 0.01);
+        osc.start(t); osc.stop(t + 0.06);
       },
 
       // UI tick — carousel nav, indicator dots
@@ -2862,14 +2879,16 @@
         case 'betting':
           SFX.phaseChange();
           if (!RM.seeded) {
-            typeText(pd, '> AWAITING VRF SEED...', 40);
+            pd.classList.add('hidden');
           } else {
             typeText(pd, '> PLACE YOUR BETS', 40);
             setTimeout(() => { pd.classList.add('hidden'); }, 2500);
           }
           pi.innerHTML = '<span class="phase-badge betting">BETTING</span>';
-          trigBtn.textContent = RM.myBet ? '[ REVIEW BETS ]' : '[ PLACE YOUR BETS ]';
-          trigBtn.classList.add('visible');
+          if (RM.seeded) {
+            trigBtn.textContent = RM.myBet ? '[ REVIEW BETS ]' : '[ PLACE YOUR BETS ]';
+            trigBtn.classList.add('visible');
+          }
           renderBullCards();
           updatePoolDisplay();
           updateSeedButton();
@@ -3337,7 +3356,6 @@
       const bootEl = document.getElementById('boot-lines');
       overlay.classList.remove('hidden');
 
-      // Animate boot lines
       const bootMsgs = [
         ['> MOONAD BULL RACE v1.0', 'ok'],
         ['> gpu_renderer: ' + (renderer.info.render ? 'ACTIVE' : 'READY'), 'ok'],
@@ -3345,42 +3363,66 @@
         ['> track_engine: READY', 'ok'],
         ['> betting_contract: ' + CONTRACT_ADDRESS.slice(0, 10) + '...', 'ok'],
       ];
-      let bootIdx = 0;
-      function showNextBoot() {
-        if (bootIdx < bootMsgs.length) {
-          const [msg, status] = bootMsgs[bootIdx];
-          const line = document.createElement('div');
-          line.innerHTML = `${msg} <span class="ok">[${status.toUpperCase()}]</span>`;
-          bootEl.appendChild(line);
-          bootIdx++;
-          setTimeout(showNextBoot, 150);
-        }
-      }
-      showNextBoot();
 
-      // On click: activate audio → boot sound → LFG → start
+      function bootKeystroke() {
+        const ctx = ensureAudio(); const t = ctx.currentTime;
+        const osc = ctx.createOscillator(); const g = ctx.createGain();
+        osc.type = 'square'; osc.frequency.value = 1800 + Math.random() * 400;
+        g.gain.setValueAtTime(0.015, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.02);
+        osc.connect(g); g.connect(ctx.destination);
+        osc.start(t); osc.stop(t + 0.025);
+      }
+
+      function typeBootLine(line, msg, cb) {
+        let i = 0;
+        function tick() {
+          if (i < msg.length) {
+            line.textContent += msg[i];
+            bootKeystroke();
+            i++;
+            setTimeout(tick, 25);
+          } else {
+            cb();
+          }
+        }
+        tick();
+      }
+
+      // On click: activate audio → type boot lines with sound → LFG → start
       overlay.addEventListener('click', function startClick() {
         overlay.removeEventListener('click', startClick);
-        overlay.querySelector('.start-prompt').textContent = '> INITIALIZING...';
-        overlay.querySelector('.start-prompt').style.animation = 'none';
+        overlay.querySelector('.start-prompt').style.display = 'none';
+        ensureAudio();
 
-        // Activate audio + play boot sound
-        SFX.bootUp();
-
-        // After boot sound finishes, show LFG
-        setTimeout(() => {
-          overlay.classList.add('hidden');
-          pd.style.display = 'block';
-          pd.textContent = 'LFG!!!!';
-          pd.classList.add('lfg');
-          SFX.lfg();
-
-          setTimeout(() => {
-            pd.classList.remove('lfg');
-            // Auto-sync to live phase on startup
-            syncToLivePhase();
-          }, 1500);
-        }, 800);
+        let bootIdx = 0;
+        function showNextBoot() {
+          if (bootIdx < bootMsgs.length) {
+            const [msg, status] = bootMsgs[bootIdx];
+            const line = document.createElement('div');
+            bootEl.appendChild(line);
+            typeBootLine(line, msg, () => {
+              line.innerHTML = `${msg} <span class="ok">[${status.toUpperCase()}]</span>`;
+              playBeep(1200, 0.04, 0.03);
+              bootIdx++;
+              setTimeout(showNextBoot, 200);
+            });
+          } else {
+            // All boot lines done → LFG
+            setTimeout(() => {
+              overlay.classList.add('hidden');
+              pd.style.display = 'block';
+              pd.textContent = 'LFG!!!!';
+              pd.classList.add('lfg');
+              SFX.lfg();
+              setTimeout(() => {
+                pd.classList.remove('lfg');
+                syncToLivePhase();
+              }, 1500);
+            }, 400);
+          }
+        }
+        showNextBoot();
       });
 
     }, (progress) => {
