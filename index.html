@@ -2952,21 +2952,28 @@
           }
           break;
 
-        case 'racing':
+        case 'racing': {
           SFX.raceHorn();
           pd.style.display = 'none';
           ybp.classList.remove('visible');
           pi.innerHTML = '<span class="phase-badge racing">RACING</span>';
-          // Reset camera to chase for race start
           camMode = 'chase'; controls.enabled = false; cameraReady = false;
           updateCamButtons();
           hideBullStatPopup();
           // Spawn bulls if not already (mid-race join)
           if (loadedModel && bulls.length === 0 && RM.seeded) spawnBulls();
-          // Compute results and start race
           computeRaceResults();
-          startRace();
+          // Check if joining mid-race — fast-forward bull positions
+          const live = getLiveState();
+          const elapsedInClosed = live.elapsed - liveSwitchingEnd;
+          if (elapsedInClosed > 6) {
+            // Skip countdown, start race immediately and fast-forward
+            startRaceMidJoin(elapsedInClosed - 3); // subtract 3s countdown
+          } else {
+            startRace();
+          }
           break;
+        }
 
         case 'results':
           SFX.phaseChange();
@@ -3230,6 +3237,48 @@
       }
       // Trigger countdown
       startCountdown();
+    }
+
+    /** Mid-race join: set speeds, fast-forward positions, skip countdown */
+    function startRaceMidJoin(raceElapsed) {
+      const minScore = Math.min(...RM.scores);
+      const maxScore = Math.max(...RM.scores);
+      const range = Math.max(1, maxScore - minScore);
+      for (let i = 0; i < bulls.length; i++) {
+        const normalized = (RM.scores[i] - minScore) / range;
+        bulls[i].speed = 10 + normalized * 5;
+      }
+      // Simulate positions by stepping through elapsed time
+      const simDt = 0.1;
+      for (let t = 0; t < raceElapsed; t += simDt) {
+        for (const bull of bulls) {
+          if (bull.racePos >= FINISH_X) { bull.finished = true; continue; }
+          const surge = Math.sin(t * 1.5 + bull.phase) * 1.0 + Math.sin(t * 0.5 + bull.phase * 2.3) * 0.6;
+          const currentSpeed = Math.max(1.0, bull.speed + surge);
+          bull.racePos += currentSpeed * simDt;
+        }
+      }
+      // Position bulls and set running animation
+      let rank = 1;
+      const sorted = [...bulls].sort((a, b) => b.racePos - a.racePos);
+      for (const bull of sorted) {
+        bull.group.position.x = bull.racePos;
+        if (bull.finished || bull.racePos >= FINISH_X) {
+          bull.finished = true;
+          bull.finishRank = rank++;
+          bull.walkAction.reset().play();
+          bull.walkAction.timeScale = 0.5;
+          bull.isWalking = true;
+        } else {
+          bull.isRunning = true;
+          bull.runAction.timeScale = 0.8 + (bull.speed / 15) * 0.6;
+          bull.idleAction.fadeOut(0); bull.runAction.reset().fadeIn(0).play();
+        }
+      }
+      nextRank = rank;
+      // Start race timer offset by elapsed time
+      raceStarted = true;
+      raceStartTime = clock.getElapsedTime() - raceElapsed;
     }
 
     function startCountdown() {
