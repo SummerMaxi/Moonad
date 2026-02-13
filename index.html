@@ -193,14 +193,12 @@
     #seed-btn:hover { background: var(--secondary); color: var(--bg); text-shadow: none; }
     #seed-btn.hidden { display: none; }
     #seed-btn.visible { display: block; }
-    .seed-reward-text {
-      font-size: 10px; font-weight: 400; letter-spacing: 1px;
-      color: var(--secondary); opacity: 0.7; margin-top: 8px;
-    }
-    .seed-vrf-text {
-      font-size: 10px; font-weight: 400; letter-spacing: 1px;
-      color: var(--primary); opacity: 0.6; margin-top: 6px;
-      animation: blink 0.6s step-end infinite;
+    #seed-reward-text {
+      display: none; position: fixed; top: 50%; left: 50%;
+      transform: translate(-50%, calc(-50% + 40px));
+      font-family: var(--font); font-size: 10px; font-weight: 400;
+      letter-spacing: 1px; color: var(--secondary); opacity: 0.6;
+      z-index: 55; pointer-events: none;
     }
 
     /* ======== NEW: Bull Stat Cards (bottom panel) ======== */
@@ -743,7 +741,8 @@
   </div>
 
   <div id="claim-banner" onclick="claimWinnings()"></div>
-  <div id="seed-btn" onclick="seedRace()">[ SEED RACE ]<div class="seed-reward-text">2% of race earnings go to seeders</div><div class="seed-vrf-text">> AWAITING VRF SEED...</div></div>
+  <div id="seed-btn" onclick="seedRace()">[ SEED RACE ]</div>
+  <div id="seed-reward-text">2% of race earnings go to seeders</div>
   <div id="wallet-btn" onclick="connectWallet()">[ CONNECT WALLET ]</div>
 
   <div id="track-banner">
@@ -1544,17 +1543,19 @@
 
     function updateSeedButton() {
       const btn = document.getElementById('seed-btn');
+      const rewardText = document.getElementById('seed-reward-text');
       const pd = document.getElementById('phase-display');
       const live = getLiveState();
       // Show seed button only during BETTING/SWITCHING if not yet seeded
       if (!RM.seeded && (live.contractPhase === 'BETTING' || live.contractPhase === 'SWITCHING')) {
         btn.classList.add('visible');
         btn.classList.remove('hidden');
-        // Hide phase display to prevent overlap
+        rewardText.style.display = 'block';
         pd.classList.add('hidden');
       } else {
         btn.classList.remove('visible');
         btn.classList.add('hidden');
+        rewardText.style.display = 'none';
       }
     }
 
@@ -2447,9 +2448,9 @@
         const ctx = ensureAudio(); const t = ctx.currentTime;
         // Sharp attack click
         const osc = ctx.createOscillator(); const g = ctx.createGain();
-        osc.type = 'square'; osc.frequency.value = 1000;
-        g.gain.setValueAtTime(0.18, t);
-        g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+        osc.type = 'sine'; osc.frequency.value = 1000;
+        g.gain.setValueAtTime(0.04, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
         osc.connect(g); g.connect(ctx.destination);
         osc.start(t); osc.stop(t + 0.06);
       },
