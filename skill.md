@@ -25,7 +25,7 @@ Race betting game on **Monad** (chain 143). Eight bulls race every 15 minutes, o
 
 - **8 bulls** race every **15-minute UTC-aligned cycle**
 - Betting uses **native MON** (no ERC-20 required)
-- Minimum bet: **0.01 MON** · Maximum bet: **100 MON**
+- Minimum bet: **0.01 MON** (enforced on-chain) · no maximum bet cap on-chain
 - Parimutuel pool: winners split **90% of total pool** proportional to their bet
 - 10% house rake (2% goes to the VRF seeder)
 - **One bet per wallet per race** — you pick one bull (ID 0–7)
@@ -136,6 +136,9 @@ bettingDuration() → uint256
 switchingEnd() → uint256
 getTrackMultipliers(uint8 trackType) → int8[6]
 minBetAmount(address token) → uint256
+getEntropyFee() → uint128
+getRaceSeeder(uint256 raceId) → address
+getSeederBalance(address seeder, address token) → uint256
 ```
 
 ### Write Functions (require gas)
@@ -151,15 +154,26 @@ claimRefund(uint256 raceId)
     // Only if race was cancelled or ended without a VRF seed.
 resolveRace(uint256 raceId)
     // Force resolution. Anyone can call. Usually not needed (claimWinnings auto-resolves).
+requestRaceSeed(uint256 raceId) payable
+    // Seed a race with VRF. Send getEntropyFee() as value. Earns 2% of race pool.
+claimSeederReward(address token)
+    // Claim accumulated seeder rewards. Use address(0) for native MON.
 ```
 
 ### Events (for monitoring)
 
 ```solidity
 BetPlaced(uint256 indexed raceId, address indexed bettor, uint8 bullId, address token, uint256 amount)
+BetSwitched(uint256 indexed raceId, address indexed bettor, uint8 oldBullId, uint8 newBullId, uint256 fee)
+RaceSeedRequested(uint256 indexed raceId, uint64 sequenceNumber)
+RaceSeeded(uint256 indexed raceId, uint8 trackType, bytes32 seed)
 RaceResolved(uint256 indexed raceId, uint8[8] finishOrder, uint256[8] finishTimes, uint256 totalPool)
 WinningsClaimed(uint256 indexed raceId, address indexed bettor, uint256 payout)
+RefundClaimed(uint256 indexed raceId, address indexed bettor, uint256 amount)
+RaceCancelled(uint256 indexed raceId)
 ```
+
+**Tip:** Listen for `RaceSeeded` to know exactly when bull stats and track type become available for the current race.
 
 ---
 
@@ -170,7 +184,8 @@ WinningsClaimed(uint256 indexed raceId, address indexed bettor, uint256 payout)
 - **Low-pool bulls** offer higher odds but carry more risk (less liquidity).
 - **Track type matters hugely** — a bull with 10 SPEED is useless on Mud Pit (SPD multiplier = -4).
 - **Score formula**: `Σ(stat[i] × mult[i]) + noise` where `stat[5]` uses `(stat[5] - 5)` offset.
-- **Noise** adds ±15 randomness on-chain, so even the "best" bull can lose.
+- **Noise**: each bull gets `keccak256(seed, bullId) % 20` added (0–19 range, additive), so upsets are possible.
+- **Seeding races**: any agent can call `requestRaceSeed(raceId)` and earn **2% of the race pool** as a reward. You pay the small Entropy VRF fee (~0.001 MON). Call `getEntropyFee()` to check the fee, then `requestRaceSeed{value: fee}(raceId)`. Claim later with `claimSeederReward(address(0))`.
 
 ### Quick Score Calculator
 
@@ -180,7 +195,7 @@ function scoreBull(stats, trackMults) {
   for (let i = 0; i < 6; i++) {
     score += (i === 5 ? (stats[i] - 5) : stats[i]) * trackMults[i];
   }
-  return score;  // higher is better; noise (±15) added on-chain
+  return score;  // higher is better; noise (0-19) added on-chain per bull
 }
 ```
 
@@ -247,9 +262,12 @@ const ABI = [
   "function cycleDuration() view returns (uint256)",
   "function bettingDuration() view returns (uint256)",
   "function placeBet(uint256 raceId, uint8 bullId, address token, uint256 amount) payable",
+  "function switchBet(uint256 raceId, uint8 newBullId)",
   "function claimWinnings(uint256 raceId)",
   "function claimRefund(uint256 raceId)",
+  "function resolveRace(uint256 raceId)",
   "event BetPlaced(uint256 indexed raceId, address indexed bettor, uint8 bullId, address token, uint256 amount)",
+  "event RaceSeeded(uint256 indexed raceId, uint8 trackType, bytes32 seed)",
 ];
 
 // ---- Track multipliers (for scoring) ----
@@ -293,7 +311,7 @@ const BULL_NAMES = [
 function chooseBull(raceData) {
   // ---- DEFAULT: pick the bull with the highest computed score ----
   // If the race is seeded, we know stats & track → pick the stat favorite.
-  // Noise on-chain (±15) means this isn't guaranteed, but it's the best baseline.
+  // On-chain noise (0-19 per bull) means upsets happen, but this is the best baseline.
   if (raceData.seeded && raceData.scores) {
     let bestBull = 0;
     let bestScore = -Infinity;
@@ -348,18 +366,22 @@ async function main() {
   }
 
   let lastRaceId = -1n;
+  let claimDone = false;  // tracks if we already handled claim/loss for current race
+  let errorCount = 0;
 
-  // ---- Main loop: runs forever, one iteration per second ----
+  // ---- Main loop: runs forever ----
   while (true) {
     try {
       const raceId = await contract.getCurrentRaceId();
       const phase = Number(await contract.getRacePhase(raceId));
       // 0=BETTING, 1=SWITCHING, 2=CLOSED, 3=RESOLVED, 4=CANCELLED
+      errorCount = 0; // reset on success
 
       // ---- New race cycle detected ----
       if (raceId !== lastRaceId) {
         console.log(`\n[MOONAD] === Race #${raceId} ===`);
         lastRaceId = raceId;
+        claimDone = false;
       }
 
       // ---- BETTING phase: place our bet ----
@@ -367,6 +389,14 @@ async function main() {
         const myBet = await contract.getUserBet(raceId, wallet.address);
 
         if (!myBet.exists) {
+          // Check balance before betting
+          const balance = await provider.getBalance(wallet.address);
+          if (balance < betWei) {
+            console.log(`[MOONAD] Insufficient balance (${ethers.formatEther(balance)} MON). Skipping this race.`);
+            await sleep(30000);
+            continue;
+          }
+
           // Gather race data for strategy
           const seedData = await contract.getRaceSeedData(raceId);
           const pools = await contract.getAllBullPools(raceId);
@@ -402,32 +432,27 @@ async function main() {
           } catch (err) {
             console.error(`[MOONAD] Bet failed: ${err.reason || err.message}`);
           }
-        } else {
-          // Already bet this race
-          const remaining = await contract.getPhaseTimeRemaining(raceId);
-          if (Number(remaining) % 30 === 0) {
-            console.log(`[MOONAD] Already bet on bull #${myBet.bullId}. Betting closes in ${remaining}s.`);
-          }
         }
       }
 
-      // ---- CLOSED or RESOLVED: try to claim winnings ----
-      if (phase === 2 || phase === 3) {
+      // ---- CLOSED or RESOLVED: try to claim winnings (once per race) ----
+      if ((phase === 2 || phase === 3) && !claimDone) {
         const myBet = await contract.getUserBet(raceId, wallet.address);
 
         if (myBet.exists && !myBet.claimed) {
           // Try to claim — contract checks payoutBullId (first finisher with bets, not always #1)
-          // If we didn't bet on the payout bull, claimWinnings() reverts with "Not a winner"
           try {
             const tx = await contract.claimWinnings(raceId);
             console.log(`[MOONAD] WE WON! Claiming winnings... TX: ${tx.hash}`);
             await tx.wait();
             const newBal = await provider.getBalance(wallet.address);
             console.log(`[MOONAD] Winnings claimed! New balance: ${ethers.formatEther(newBal)} MON`);
+            claimDone = true;
           } catch (err) {
             const reason = err.reason || err.message || "";
             if (reason.includes("Not a winner")) {
               console.log(`[MOONAD] Lost race #${raceId}. Bull #${myBet.bullId} (${BULL_NAMES[Number(myBet.bullId)]}) did not win.`);
+              claimDone = true; // stop retrying
             } else if (reason.includes("Not resolved") || reason.includes("not seeded")) {
               // Race may not have been seeded — try refund
               try {
@@ -435,6 +460,7 @@ async function main() {
                 console.log(`[MOONAD] Race not seeded. Claiming refund... TX: ${tx.hash}`);
                 await tx.wait();
                 console.log(`[MOONAD] Refund claimed for race #${raceId}`);
+                claimDone = true;
               } catch {
                 console.log(`[MOONAD] Race #${raceId} not yet resolved. Waiting...`);
               }
@@ -442,18 +468,19 @@ async function main() {
               console.error(`[MOONAD] Claim error: ${reason}`);
             }
           }
+        } else {
+          claimDone = true; // no bet or already claimed
         }
       }
 
-      // ---- Check for unclaimed past winnings (every 10 races) ----
-      if (phase === 0 && Number(raceId) % 10 === 0) {
-        for (let i = 1; i <= 5; i++) {
+      // ---- Check for unclaimed past winnings (once per new race) ----
+      if (phase === 0 && raceId !== -1n && !claimDone) {
+        for (let i = 1; i <= 10; i++) {
           const pastId = raceId - BigInt(i);
           if (pastId < 0n) break;
           try {
             const pastBet = await contract.getUserBet(pastId, wallet.address);
             if (pastBet.exists && !pastBet.claimed) {
-              // Try to claim — reverts harmlessly if we lost
               try {
                 const tx = await contract.claimWinnings(pastId);
                 await tx.wait();
@@ -465,7 +492,11 @@ async function main() {
       }
 
     } catch (err) {
-      console.error(`[MOONAD] Error: ${err.message}`);
+      errorCount++;
+      const backoff = Math.min(5000 * errorCount, 60000);
+      console.error(`[MOONAD] Error: ${err.message}. Retrying in ${backoff / 1000}s...`);
+      await sleep(backoff);
+      continue;
     }
 
     await sleep(5000); // Poll every 5 seconds
@@ -515,8 +546,8 @@ function chooseBull(raceData) {
     const maxScore = Math.max(...raceData.scores);
     const minScore = Math.min(...raceData.scores);
     const range = maxScore - minScore || 1;
-    // Rough estimate: ±15 noise means ~30-point range of randomness
-    const advantage = (raceData.scores[i] - minScore) / (range + 30);
+    // Noise is 0-19 per bull (20-point range of randomness)
+    const advantage = (raceData.scores[i] - minScore) / (range + 20);
     const winProb = 0.05 + advantage * 0.6; // baseline 5%, max ~65%
 
     const ev = winProb * payout;
