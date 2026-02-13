@@ -2450,26 +2450,15 @@
         noise.start(t); noise.stop(t + 0.02);
       },
 
-      // Clock tick — mechanical clock/metronome tick for countdown
+      // Clock tick — clean, soft pop (once per second)
       clockTick() {
         const ctx = ensureAudio(); const t = ctx.currentTime;
-        // Sharp noise transient — like a clock mechanism
-        const noise = ctx.createBufferSource();
-        noise.buffer = _noiseBuf(ctx, 0.025);
-        const bp = ctx.createBiquadFilter();
-        bp.type = 'bandpass'; bp.frequency.value = 2000; bp.Q.value = 5;
-        const ng = ctx.createGain();
-        ng.gain.setValueAtTime(0.15, t);
-        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.02);
-        noise.connect(bp); bp.connect(ng); ng.connect(ctx.destination);
-        noise.start(t); noise.stop(t + 0.025);
-        // Low woody knock body
         const osc = ctx.createOscillator(); const g = ctx.createGain();
-        osc.type = 'triangle'; osc.frequency.value = 400;
-        g.gain.setValueAtTime(0.08, t);
-        g.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
+        osc.type = 'sine'; osc.frequency.value = 1000;
+        g.gain.setValueAtTime(0.05, t);
+        g.gain.setValueAtTime(0, t + 0.008);
         osc.connect(g); g.connect(ctx.destination);
-        osc.start(t); osc.stop(t + 0.035);
+        osc.start(t); osc.stop(t + 0.01);
       },
 
       // UI tick — carousel nav, indicator dots
