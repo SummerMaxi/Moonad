@@ -1417,15 +1417,18 @@
     const finishBar = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.35, trackWidth + 4.2), finishGateMat);
     finishBar.position.set(FINISH_X, 4.5, 0); scene.add(finishBar);
     const finTextCanvas = document.createElement('canvas');
-    finTextCanvas.width = 512; finTextCanvas.height = 64;
+    finTextCanvas.width = 512; finTextCanvas.height = 128;
     const ftCtx = finTextCanvas.getContext('2d');
-    ftCtx.fillStyle = '#000000'; ftCtx.fillRect(0, 0, 512, 64);
-    ftCtx.fillStyle = '#ffb000'; ftCtx.font = 'bold 42px monospace';
+    ftCtx.fillStyle = '#000000'; ftCtx.fillRect(0, 0, 512, 128);
+    ftCtx.strokeStyle = '#ffb000'; ftCtx.lineWidth = 2;
+    ftCtx.strokeRect(4, 4, 504, 120);
+    ftCtx.fillStyle = '#ffb000'; ftCtx.font = 'bold 64px monospace';
     ftCtx.textAlign = 'center'; ftCtx.textBaseline = 'middle';
-    ftCtx.fillText('> F I N I S H _', 256, 32);
+    ftCtx.fillText('F I N I S H', 256, 68);
     const finTextTex = new THREE.CanvasTexture(finTextCanvas);
+    const finPlaneW = 8; const finPlaneH = finPlaneW * (128 / 512);
     for (let rot of [Math.PI / 2, -Math.PI / 2]) {
-      const plane = new THREE.Mesh(new THREE.PlaneGeometry(trackWidth + 4, 0.6), new THREE.MeshBasicMaterial({ map: finTextTex, transparent: true }));
+      const plane = new THREE.Mesh(new THREE.PlaneGeometry(finPlaneW, finPlaneH), new THREE.MeshBasicMaterial({ map: finTextTex, transparent: true }));
       plane.position.set(FINISH_X, 4.8, 0); plane.rotation.y = rot; scene.add(plane);
     }
     const finLineMat = new THREE.LineBasicMaterial({ color: 0xffb000, transparent: true, opacity: 0.5 });
