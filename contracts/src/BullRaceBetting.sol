@@ -426,38 +426,55 @@ contract BullRaceBetting is ReentrancyGuard, Ownable, Pausable, IEntropyConsumer
         require(!race.cancelled, "Race cancelled");
         require(race.seeded, "Race not seeded");
 
-        uint8 numBulls = race.numBulls;
-        bytes32 seed = race.seed;
+        // Compute scores and sorted finish order
+        (uint8[8] memory finishOrder, uint256[8] memory finishTimes) = _computeResults(
+            race.numBulls, race.seed, race.trackType, race.bullStats
+        );
 
-        // ---- Compute scores for each bull ----
+        // Distribute rake
+        _distributeRake(raceId, race);
+
+        // Find payout bull: first finisher with bets
+        for (uint8 i = 0; i < race.numBulls; i++) {
+            if (bullPools[raceId][finishOrder[i]] > 0) {
+                race.payoutBullId = finishOrder[i];
+                break;
+            }
+        }
+
+        race.resolved = true;
+
+        // Store results
+        RaceResults storage results = _results[raceId];
+        results.finishOrder = finishOrder;
+        results.finishTimes = finishTimes;
+        results.resolvedAt = uint32(block.timestamp);
+
+        emit RaceResolved(raceId, finishOrder, finishTimes, race.totalPool);
+    }
+
+    /// @notice Compute scores, sort, and derive finish times — pure computation, no state writes.
+    function _computeResults(
+        uint8 numBulls,
+        bytes32 seed,
+        uint8 trackType,
+        uint8[48] storage bullStats
+    ) internal view returns (uint8[8] memory finishOrder, uint256[8] memory finishTimes) {
         int256[8] memory scores;
+        int8[6] memory mults = TRACK_MULTIPLIERS[trackType];
+
         for (uint8 i = 0; i < numBulls; i++) {
             int256 score = 0;
-            int8[6] memory mults = TRACK_MULTIPLIERS[race.trackType];
-
             for (uint8 j = 0; j < 6; j++) {
-                int256 stat = int256(uint256(race.bullStats[i * 6 + j]));
-                if (j == 5) {
-                    // Temper: offset by -5 so temper 5 is neutral
-                    score += (stat - 5) * int256(mults[j]);
-                } else {
-                    score += stat * int256(mults[j]);
-                }
+                int256 stat = int256(uint256(bullStats[i * 6 + j]));
+                score += j == 5 ? (stat - 5) * int256(mults[j]) : stat * int256(mults[j]);
             }
-
-            // Random variance from seed (0-19)
-            uint256 bonus = uint256(keccak256(abi.encode(seed, i))) % 20;
-            score += int256(bonus);
-
+            score += int256(uint256(keccak256(abi.encode(seed, i))) % 20);
             scores[i] = score;
         }
 
-        // ---- Sort bulls by score descending (insertion sort, max 8 elements) ----
-        uint8[8] memory finishOrder;
-        for (uint8 i = 0; i < numBulls; i++) {
-            finishOrder[i] = i;
-        }
-
+        // Sort by score descending (insertion sort, max 8 elements)
+        for (uint8 i = 0; i < numBulls; i++) finishOrder[i] = i;
         for (uint8 i = 1; i < numBulls; i++) {
             uint8 key = finishOrder[i];
             int256 keyScore = scores[key];
@@ -469,16 +486,15 @@ contract BullRaceBetting is ReentrancyGuard, Ownable, Pausable, IEntropyConsumer
             finishOrder[j] = key;
         }
 
-        // ---- Derive cosmetic finish times from scores ----
-        uint256[8] memory finishTimes;
+        // Derive cosmetic finish times
         int256 topScore = scores[finishOrder[0]];
         for (uint8 i = 0; i < numBulls; i++) {
-            int256 gap = topScore - scores[finishOrder[i]];
-            // Base 25000ms + gap * 200ms
-            finishTimes[i] = 25000 + uint256(gap) * 200;
+            finishTimes[i] = 25000 + uint256(topScore - scores[finishOrder[i]]) * 200;
         }
+    }
 
-        // ---- Calculate rake: 10% total, split between house (8%) and seeder (2%) ----
+    /// @notice Distribute rake between house and seeder.
+    function _distributeRake(uint256 raceId, RaceConfig storage race) internal {
         uint256 totalRake = (race.totalPool * HOUSE_RAKE_BPS) / BPS_BASE;
         uint256 additionalRake = 0;
         if (totalRake > race.rakeAccumulated) {
@@ -486,40 +502,14 @@ contract BullRaceBetting is ReentrancyGuard, Ownable, Pausable, IEntropyConsumer
         }
         race.rakeAccumulated = totalRake;
 
-        // Split: seeder gets SEEDER_RAKE_BPS portion of totalPool, rest to house
         uint256 seederCut = 0;
         if (race.seeder != address(0) && race.totalPool > 0) {
             seederCut = (race.totalPool * SEEDER_RAKE_BPS) / BPS_BASE;
-            // Cap seeder cut to available additional rake
             if (seederCut > additionalRake) seederCut = additionalRake;
             seederBalance[race.seeder][race.token] += seederCut;
             emit SeederRewardCredited(raceId, race.seeder, seederCut);
         }
         rakeBalance[race.token] += (additionalRake - seederCut);
-
-        // ---- Find payout bull: first finisher with bets ----
-        uint8 payoutBull = 0;
-        bool found = false;
-        for (uint8 i = 0; i < numBulls; i++) {
-            if (bullPools[raceId][finishOrder[i]] > 0) {
-                payoutBull = finishOrder[i];
-                found = true;
-                break;
-            }
-        }
-
-        race.resolved = true;
-        if (found) {
-            race.payoutBullId = payoutBull;
-        }
-
-        // Store results
-        RaceResults storage results = _results[raceId];
-        results.finishOrder = finishOrder;
-        results.finishTimes = finishTimes;
-        results.resolvedAt = uint32(block.timestamp);
-
-        emit RaceResolved(raceId, finishOrder, finishTimes, race.totalPool);
     }
 
     // ====================================================================
