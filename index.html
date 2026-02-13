@@ -3155,6 +3155,10 @@
           if (elapsedInClosed > 6) {
             // Skip countdown, start race immediately and fast-forward
             startRaceMidJoin(elapsedInClosed - 3); // subtract 3s countdown
+            // If all bulls already finished, go straight to results
+            if (raceOver) {
+              setTimeout(() => { if (RM.phase === 'racing') setPhase('results'); }, 2000);
+            }
           } else {
             startRace();
           }
@@ -3176,6 +3180,15 @@
       if (phase === 'racing') {
         document.getElementById('lb-header').textContent = '+-- LEADERBOARD --+';
         stopLeaderboardRefresh();
+      } else if (phase === 'results') {
+        // Show final race positions for 10s, then switch to all-time
+        if (bulls.length > 0) updateLeaderboard();
+        setTimeout(() => {
+          if (RM.phase === 'results' || RM.phase === 'waiting' || RM.phase === 'betting') {
+            renderAllTimeLeaderboard();
+            startLeaderboardRefresh();
+          }
+        }, 10000);
       } else {
         renderAllTimeLeaderboard();
         startLeaderboardRefresh();
@@ -3473,14 +3486,16 @@
       // Position bulls and set running animation
       let rank = 1;
       const sorted = [...bulls].sort((a, b) => b.racePos - a.racePos);
+      const nowElapsed = clock.getElapsedTime();
       for (const bull of sorted) {
         bull.group.position.x = bull.racePos;
         if (bull.finished || bull.racePos >= FINISH_X) {
           bull.finished = true;
           bull.finishRank = rank++;
-          bull.walkAction.reset().play();
-          bull.walkAction.timeScale = 0.5;
+          bull.finishTime = nowElapsed - raceElapsed * 0.7; // approximate past finish
           bull.isWalking = true;
+          bull.isIdling = true;
+          bull.idleAction.reset().play();
         } else {
           bull.isRunning = true;
           bull.runAction.timeScale = 0.8 + (bull.speed / 15) * 0.6;
@@ -3488,6 +3503,8 @@
         }
       }
       nextRank = rank;
+      // If all bulls finished, mark race over
+      if (rank > NUM_BULLS) raceOver = true;
       // Start race timer offset by elapsed time
       raceStarted = true;
       raceStartTime = clock.getElapsedTime() - raceElapsed;
