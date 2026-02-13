@@ -147,6 +147,7 @@ contract BullRaceBetting is ReentrancyGuard, Ownable, Pausable, IEntropyConsumer
     /// @notice Request VRF randomness for a race. Anyone can call. Caller pays Entropy fee.
     /// @param raceId The race to seed
     function requestRaceSeed(uint256 raceId) external payable whenNotPaused {
+        require(raceId == getCurrentRaceId(), "Can only seed current race");
         RaceConfig storage race = _races[raceId];
 
         RacePhase phase = getRacePhase(raceId);
@@ -291,6 +292,7 @@ contract BullRaceBetting is ReentrancyGuard, Ownable, Pausable, IEntropyConsumer
         address token,
         uint256 amount
     ) external payable nonReentrant whenNotPaused {
+        require(raceId == getCurrentRaceId(), "Can only bet current race");
         require(isBettingOpen(raceId), "Betting not open");
 
         RaceConfig storage race = _races[raceId];
