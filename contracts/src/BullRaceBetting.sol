@@ -65,6 +65,12 @@ contract BullRaceBetting is ReentrancyGuard, Ownable, Pausable, IEntropyConsumer
         uint128 amount;
     }
 
+    struct LeaderboardEntry {
+        address player;
+        uint256 winnings;
+        uint256 wins;
+    }
+
     // ======== STATE ========
     uint256 public epoch;              // UTC 00:00 of start day
     uint256 public cycleDuration = 900;      // 15 minutes
@@ -93,6 +99,10 @@ contract BullRaceBetting is ReentrancyGuard, Ownable, Pausable, IEntropyConsumer
     // Leaderboard: cumulative stats per address
     mapping(address => uint256) public totalWinnings;
     mapping(address => uint256) public racesWon;
+    mapping(address => uint256) public totalBetsPlaced;
+
+    // On-chain top-10 leaderboard
+    LeaderboardEntry[10] public leaderboard;
 
     // Race data
     mapping(uint256 => RaceConfig) private _races;
@@ -308,6 +318,7 @@ contract BullRaceBetting is ReentrancyGuard, Ownable, Pausable, IEntropyConsumer
 
         bullPools[raceId][bullId] += betAmount;
         race.totalPool += betAmount;
+        totalBetsPlaced[msg.sender] += 1;
 
         emit BetPlaced(raceId, msg.sender, bullId, token, betAmount);
     }
@@ -371,6 +382,7 @@ contract BullRaceBetting is ReentrancyGuard, Ownable, Pausable, IEntropyConsumer
         // Update leaderboard stats
         totalWinnings[msg.sender] += payout;
         racesWon[msg.sender] += 1;
+        _updateLeaderboard(msg.sender);
 
         _sendPayment(race.token, msg.sender, payout);
 
@@ -703,6 +715,72 @@ contract BullRaceBetting is ReentrancyGuard, Ownable, Pausable, IEntropyConsumer
     /// @notice Get a seeder's claimable reward balance for a token
     function getSeederBalance(address seeder, address token) external view returns (uint256) {
         return seederBalance[seeder][token];
+    }
+
+    // ====================================================================
+    //                         LEADERBOARD
+    // ====================================================================
+
+    /// @notice Update the top-10 leaderboard after a claim. O(10) worst case.
+    function _updateLeaderboard(address player) internal {
+        uint256 w = totalWinnings[player];
+        uint256 wins = racesWon[player];
+
+        // Check if player is already on the board
+        int256 existIdx = -1;
+        for (uint256 i = 0; i < 10; i++) {
+            if (leaderboard[i].player == player) {
+                existIdx = int256(i);
+                break;
+            }
+        }
+
+        if (existIdx >= 0) {
+            // Update stats in place
+            uint256 idx = uint256(existIdx);
+            leaderboard[idx].winnings = w;
+            leaderboard[idx].wins = wins;
+            // Bubble up if needed
+            while (idx > 0 && leaderboard[idx].winnings > leaderboard[idx - 1].winnings) {
+                LeaderboardEntry memory tmp = leaderboard[idx - 1];
+                leaderboard[idx - 1] = leaderboard[idx];
+                leaderboard[idx] = tmp;
+                idx--;
+            }
+        } else {
+            // Not on board — check if qualifies (better than last entry)
+            if (w > leaderboard[9].winnings) {
+                leaderboard[9] = LeaderboardEntry(player, w, wins);
+                // Bubble up
+                uint256 idx = 9;
+                while (idx > 0 && leaderboard[idx].winnings > leaderboard[idx - 1].winnings) {
+                    LeaderboardEntry memory tmp = leaderboard[idx - 1];
+                    leaderboard[idx - 1] = leaderboard[idx];
+                    leaderboard[idx] = tmp;
+                    idx--;
+                }
+            }
+        }
+    }
+
+    /// @notice Get the full top-10 leaderboard
+    function getLeaderboard() external view returns (LeaderboardEntry[10] memory) {
+        return leaderboard;
+    }
+
+    /// @notice Owner-only: seed leaderboard from old contract data (migration helper)
+    function seedLeaderboard(
+        address[] calldata players,
+        uint256[] calldata winnings,
+        uint256[] calldata wins
+    ) external onlyOwner {
+        require(players.length == winnings.length && players.length == wins.length, "Length mismatch");
+        require(players.length <= 10, "Max 10 entries");
+        for (uint256 i = 0; i < players.length; i++) {
+            leaderboard[i] = LeaderboardEntry(players[i], winnings[i], wins[i]);
+            totalWinnings[players[i]] = winnings[i];
+            racesWon[players[i]] = wins[i];
+        }
     }
 
     // ====================================================================

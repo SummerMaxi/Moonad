@@ -421,6 +421,22 @@
       50% { border-color: var(--secondary); text-shadow: 0 0 8px rgba(255,176,0,0.5); }
     }
 
+    /* Past unclaimed winnings banner */
+    #past-claim-banner {
+      display: none; position: fixed; top: 56px; left: 0; width: 100%;
+      padding: 6px 12px; background: rgba(10, 10, 10, 0.95);
+      border-top: 1px solid var(--secondary); border-bottom: 1px solid var(--secondary);
+      color: var(--secondary); font-size: 11px; text-align: center;
+      z-index: 53; cursor: pointer; pointer-events: auto;
+      letter-spacing: 1px; text-shadow: 0 0 5px rgba(255, 176, 0, 0.5);
+      animation: pulse-border-orange 1.5s ease-in-out infinite;
+    }
+    #past-claim-banner.visible { display: block; }
+    @keyframes pulse-border-orange {
+      0%, 100% { border-color: var(--secondary); text-shadow: 0 0 5px rgba(255, 176, 0, 0.5); }
+      50% { border-color: var(--primary); text-shadow: var(--glow); }
+    }
+
     /* ======== Modal Backdrop ======== */
     #bet-modal-backdrop {
       position: fixed; top: 0; left: 0; width: 100%; height: 100%;
@@ -741,6 +757,7 @@
   </div>
 
   <div id="claim-banner" onclick="claimWinnings()"></div>
+  <div id="past-claim-banner" onclick="claimAllPastWinnings()"></div>
   <div id="seed-btn" onclick="seedRace()">[ SEED RACE ]</div>
   <div id="seed-reward-text">2% of race earnings go to seeders</div>
   <div id="wallet-btn" onclick="connectWallet()">[ CONNECT WALLET ]</div>
@@ -938,6 +955,11 @@
       'function switchBet(uint256 raceId, uint8 newBullId)',
       'function claimWinnings(uint256 raceId)',
       'function claimRefund(uint256 raceId)',
+      // Leaderboard
+      'function getLeaderboard() view returns (tuple(address player, uint256 winnings, uint256 wins)[10])',
+      'function totalWinnings(address) view returns (uint256)',
+      'function racesWon(address) view returns (uint256)',
+      'function totalBetsPlaced(address) view returns (uint256)',
       // Events
       'event BetPlaced(uint256 indexed raceId, address indexed bettor, uint8 bullId, address token, uint256 amount)',
       'event BetSwitched(uint256 indexed raceId, address indexed bettor, uint8 oldBullId, uint8 newBullId, uint256 fee)',
@@ -1045,6 +1067,7 @@
         updateBalanceDisplay();
         updateClaimBanner();
         syncToLivePhase();
+        checkPastUnclaimedWinnings();
         console.log('[AppKit] Wallet connected:', userAddress);
       } catch (err) {
         console.error('[AppKit] setupEthersFromAppKit failed:', err);
@@ -1117,6 +1140,9 @@
       seeded: false,       // whether current race has VRF seed
       raceResolved: false, // whether current race is resolved on-chain
       claimed: false,      // whether user has claimed winnings this race
+      pastUnclaimed: [],   // [{raceId, payout}] unclaimed past winnings
+      claimingPast: false, // true while claiming past winnings
+      allTimeLeaderboard: null, // cached on-chain leaderboard
     };
 
     // ======== SCENE ========
@@ -1665,8 +1691,11 @@
     }
 
     /** Sync frontend to correct on-chain phase (called when entering LIVE mode) */
+    let _syncing = false;
     async function syncToLivePhase() {
-
+      if (_syncing) return;
+      _syncing = true;
+      try {
       await loadLiveConfig();
       const live = getLiveState();
       RM.liveRaceId = live.raceId;
@@ -1728,6 +1757,9 @@
       }
 
       startLivePolling();
+      if (userAddress) checkPastUnclaimedWinnings();
+      loadOnChainLeaderboard();
+      } finally { _syncing = false; }
     }
 
     /** Poll contract for pool/bet data updates */
@@ -2265,6 +2297,99 @@
       }
     };
 
+    // ======== PAST UNCLAIMED WINNINGS ========
+    async function checkPastUnclaimedWinnings() {
+      if (!userAddress) return;
+      try {
+        const currentId = Number(await contract.getCurrentRaceId());
+        const checks = [];
+        const startId = Math.max(0, currentId - 10);
+        for (let id = startId; id < currentId; id++) {
+          checks.push((async (raceId) => {
+            try {
+              const bet = await contract.getUserBet(raceId, userAddress);
+              if (!bet.exists || bet.claimed) return null;
+              const info = await contract.getRaceInfo(raceId);
+              if (!info.resolved) return null;
+              const [results, pools] = await Promise.all([
+                contract.getRaceResults(raceId),
+                contract.getAllBullPools(raceId),
+              ]);
+              const winnerBull = results.finishOrder[0];
+              // Find payout bull (first finisher with bets)
+              let payoutBull = winnerBull;
+              for (let i = 0; i < 8; i++) {
+                if (Number(pools[results.finishOrder[i]]) > 0) {
+                  payoutBull = results.finishOrder[i];
+                  break;
+                }
+              }
+              if (Number(bet.bullId) !== Number(payoutBull)) return null;
+              const totalPool = Number(ethers.formatEther(info.totalPool));
+              const winningPool = Number(ethers.formatEther(pools[payoutBull]));
+              const betAmount = Number(ethers.formatEther(bet.amount));
+              const netPool = totalPool * 0.9;
+              const payout = winningPool > 0 ? (netPool * betAmount) / winningPool : 0;
+              return { raceId, payout };
+            } catch { return null; }
+          })(id));
+        }
+        const results = await Promise.all(checks);
+        RM.pastUnclaimed = results.filter(r => r !== null);
+        renderPastClaimBanner();
+      } catch (e) {
+        console.error('checkPastUnclaimedWinnings error:', e);
+      }
+    }
+
+    function renderPastClaimBanner() {
+      const banner = document.getElementById('past-claim-banner');
+      if (RM.pastUnclaimed.length === 0) {
+        banner.classList.remove('visible');
+        return;
+      }
+      const total = RM.pastUnclaimed.reduce((s, r) => s + r.payout, 0);
+      banner.textContent = `> ${RM.pastUnclaimed.length} UNCLAIMED WINNING(S) FROM PAST RACES ~${total.toFixed(2)} MON  [ CLAIM ALL ]`;
+      banner.classList.add('visible');
+    }
+
+    window.claimAllPastWinnings = async function() {
+      if (!contractWrite || RM.claimingPast || RM.pastUnclaimed.length === 0) return;
+      RM.claimingPast = true;
+      const banner = document.getElementById('past-claim-banner');
+      const total = RM.pastUnclaimed.length;
+      let claimed = 0;
+      for (const entry of [...RM.pastUnclaimed]) {
+        try {
+          banner.textContent = `> CLAIMING ${claimed + 1}/${total}...`;
+          const tx = await contractWrite.claimWinnings(entry.raceId);
+          SFX.chaChing();
+          await tx.wait();
+          claimed++;
+          RM.pastUnclaimed = RM.pastUnclaimed.filter(r => r.raceId !== entry.raceId);
+        } catch (e) {
+          console.error(`Failed to claim race ${entry.raceId}:`, e);
+        }
+      }
+      // Refresh balance
+      if (provider && userAddress) {
+        const bal = await provider.getBalance(userAddress);
+        RM.walletBalance = parseFloat(ethers.formatEther(bal));
+        const short = userAddress.slice(0, 6) + '...' + userAddress.slice(-4);
+        document.getElementById('wallet-btn').textContent = `${short} | ${RM.walletBalance.toFixed(1)} MON`;
+        updateBalanceDisplay();
+      }
+      if (claimed > 0) {
+        banner.textContent = `> CLAIMED ${claimed} PAST WINNING(S) ✓`;
+        banner.style.cursor = 'default';
+        banner.onclick = null;
+        setTimeout(() => { banner.classList.remove('visible'); }, 5000);
+      } else {
+        renderPastClaimBanner();
+      }
+      RM.claimingPast = false;
+    };
+
     window.updateModalCountdown = function() {
       const remaining = getPhaseTimeRemaining();
       const m = Math.floor(remaining / 60);
@@ -2273,6 +2398,58 @@
       const phase = RM.phase === 'switching' ? 'switching closes' : 'betting closes';
       if (el) el.textContent = `> ${phase} in ${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
     };
+
+    // ======== ON-CHAIN TOP-10 LEADERBOARD ========
+    let _leaderboardRefreshInterval = null;
+
+    async function loadOnChainLeaderboard() {
+      try {
+        const entries = await contract.getLeaderboard();
+        RM.allTimeLeaderboard = entries
+          .map(e => ({
+            player: e.player,
+            winnings: Number(ethers.formatEther(e.winnings)),
+            wins: Number(e.wins),
+          }))
+          .filter(e => e.player !== '0x0000000000000000000000000000000000000000');
+      } catch (e) {
+        console.error('loadOnChainLeaderboard error:', e);
+      }
+    }
+
+    function renderAllTimeLeaderboard() {
+      const lb = RM.allTimeLeaderboard;
+      if (!lb || lb.length === 0) {
+        document.getElementById('lb-header').textContent = '+-- ALL-TIME TOP 10 --+';
+        document.getElementById('lb-body').innerHTML = '<div style="padding:4px 0;color:var(--muted)">No data yet</div>';
+        return;
+      }
+      document.getElementById('lb-header').textContent = '+-- ALL-TIME TOP 10 --+';
+      document.getElementById('lb-body').innerHTML = lb.map((e, i) => {
+        const short = e.player.slice(0, 6) + '..' + e.player.slice(-4);
+        const isYou = userAddress && e.player.toLowerCase() === userAddress.toLowerCase();
+        const color = isYou ? 'var(--secondary)' : 'var(--primary)';
+        const medal = i === 0 ? ' <span class="medal">[1ST]</span>' : i === 1 ? ' <span class="medal">[2ND]</span>' : i === 2 ? ' <span class="medal">[3RD]</span>' : '';
+        return `<div class="lane" style="color:${color}"><span class="pos">${String(i + 1).padStart(2, '0')}.</span><span class="name-text">${short}${isYou ? ' (YOU)' : ''}${medal}</span><span class="done">${e.winnings.toFixed(1)} MON | ${e.wins}W</span></div>`;
+      }).join('');
+    }
+
+    function startLeaderboardRefresh() {
+      stopLeaderboardRefresh();
+      _leaderboardRefreshInterval = setInterval(async () => {
+        if (RM.phase !== 'racing') {
+          await loadOnChainLeaderboard();
+          if (RM.phase !== 'racing') renderAllTimeLeaderboard();
+        }
+      }, 60000);
+    }
+
+    function stopLeaderboardRefresh() {
+      if (_leaderboardRefreshInterval) {
+        clearInterval(_leaderboardRefreshInterval);
+        _leaderboardRefreshInterval = null;
+      }
+    }
 
     function updateClaimBanner() {
       const banner = document.getElementById('claim-banner');
@@ -2870,7 +3047,7 @@
       phaseInd.classList.add(phase === 'results' || phase === 'revealing' ? 'closed' : phase);
 
       // Reset visibility
-      pd.className = ''; pd.style.display = 'block';
+      pd.className = ''; pd.textContent = ''; pd.style.display = '';
       bc.classList.remove('visible');
       rp.classList.remove('visible');
       tr.classList.remove('visible');
@@ -2994,6 +3171,15 @@
           updateBalanceDisplay();
           break;
       }
+
+      // Toggle leaderboard: race positions during racing, all-time otherwise
+      if (phase === 'racing') {
+        document.getElementById('lb-header').textContent = '+-- LEADERBOARD --+';
+        stopLeaderboardRefresh();
+      } else {
+        renderAllTimeLeaderboard();
+        startLeaderboardRefresh();
+      }
     }
 
     function getPhaseTimeRemaining() {
@@ -3024,6 +3210,18 @@
 
     let _lastTickSec = -1;
     let gameStarted = false;
+    let _phaseTimerInterval = null;
+    let _phaseAdvancing = false;
+
+    function startPhaseTimerInterval() {
+      if (_phaseTimerInterval) return;
+      _phaseTimerInterval = setInterval(() => {
+        if (gameStarted && RM.phase !== 'loading') {
+          updatePhaseTimer();
+        }
+      }, 1000);
+    }
+
     function updatePhaseTimer() {
       const remaining = getPhaseTimeRemaining();
       if (RM.phase === 'waiting' || RM.phase === 'betting' || RM.phase === 'switching' || RM.phase === 'results') {
@@ -3057,11 +3255,12 @@
         }
       }
 
-      // Auto-advance phases
-      if (remaining <= 0) {
+      // Auto-advance phases (guard prevents double-fire from rAF + setInterval)
+      if (remaining <= 0 && !_phaseAdvancing) {
+        _phaseAdvancing = true;
         switch (RM.phase) {
           case 'waiting':
-            if (!liveRaceDataLoaded) return;
+            if (!liveRaceDataLoaded) { _phaseAdvancing = false; return; }
             setPhase('betting');
             break;
           case 'betting': setPhase('revealing'); break;
@@ -3070,6 +3269,7 @@
           case 'racing': cleanupRace(); setPhase('waiting'); break;
           case 'results': cleanupRace(); setPhase('waiting'); break;
         }
+        _phaseAdvancing = false;
       }
     }
 
@@ -3440,6 +3640,7 @@
               setTimeout(() => {
                 pd.classList.remove('lfg');
                 gameStarted = true;
+                startPhaseTimerInterval();
                 syncToLivePhase();
               }, 1500);
             }, 400);
