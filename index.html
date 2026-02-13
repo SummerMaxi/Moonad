@@ -2096,11 +2096,7 @@
           const payout = myPool > 0 ? (getTotalPool() * 0.9) * (RM.myBet.amount / myPool) : 0;
           const profit = payout - RM.myBet.amount;
           html += `<div class="your-result won">> YOU WON! +${profit.toFixed(2)} MON (${payout.toFixed(2)} total)</div>`;
-          if (RM.raceResolved) {
-            html += `<button class="claim-btn" onclick="claimWinnings()">[ CLAIM ${payout.toFixed(2)} MON ]</button>`;
-          } else {
-            html += `<div style="color:var(--secondary);font-size:10px;margin-top:4px">> resolving race on-chain...</div>`;
-          }
+          html += `<button class="claim-btn" onclick="claimWinnings()">[ CLAIM ${payout.toFixed(2)} MON ]</button>`;
         } else {
           html += `<div class="your-result lost">> LOST: -${RM.myBet.amount.toFixed(2)} MON (your bull: #${myRank + 1})</div>`;
         }
@@ -2249,11 +2245,6 @@
 
     window.claimWinnings = async function() {
       if (!contractWrite || !RM.myBet) return;
-      if (!RM.raceResolved) {
-        SFX.error();
-        alert('Race is still being resolved on-chain. Please wait a moment.');
-        return;
-      }
       try {
         const tx = await contractWrite.claimWinnings(RM.raceId);
         SFX.chaChing();
@@ -2284,8 +2275,8 @@
 
     function updateClaimBanner() {
       const banner = document.getElementById('claim-banner');
-      // Show claim banner only if user won, race resolved on-chain, and hasn't claimed
-      if (RM.myBet && RM.phase === 'results' && RM.walletConnected && RM.raceResolved && RM.finishOrder[0] === RM.myBet.bullIndex) {
+      // Show claim banner if user won (contract auto-resolves on claim)
+      if (RM.myBet && RM.phase === 'results' && RM.walletConnected && RM.finishOrder[0] === RM.myBet.bullIndex) {
         const myPool = getTotalPoolForBull(RM.myBet.bullIndex);
         const payout = myPool > 0 ? (getTotalPool() * 0.9) * (RM.myBet.amount / myPool) : 0;
         banner.textContent = `> UNCLAIMED: ${payout.toFixed(2)} MON  [ CLAIM ]`;

@@ -349,6 +349,11 @@ contract BullRaceBetting is ReentrancyGuard, Ownable, Pausable, IEntropyConsumer
 
     function claimWinnings(uint256 raceId) external nonReentrant {
         RaceConfig storage race = _races[raceId];
+
+        // Lazy resolution: auto-resolve if seeded + CLOSED but not yet resolved
+        if (!race.resolved && race.seeded && !race.cancelled && getRacePhase(raceId) == RacePhase.CLOSED) {
+            _resolveRace(raceId);
+        }
         require(race.resolved, "Not resolved");
 
         UserBet storage bet = _userBets[raceId][msg.sender];
@@ -409,6 +414,11 @@ contract BullRaceBetting is ReentrancyGuard, Ownable, Pausable, IEntropyConsumer
     /// @notice Resolve a race on-chain. Anyone can call — results are deterministic from VRF seed.
     /// @param raceId The race to resolve
     function resolveRace(uint256 raceId) external nonReentrant {
+        _resolveRace(raceId);
+    }
+
+    /// @notice Internal resolution logic. Called by resolveRace() or lazily by claimWinnings().
+    function _resolveRace(uint256 raceId) internal {
         RaceConfig storage race = _races[raceId];
 
         require(getRacePhase(raceId) == RacePhase.CLOSED, "Race not in closed phase");
