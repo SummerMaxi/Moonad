@@ -2461,7 +2461,7 @@
       clockTick() {
         const ctx = ensureAudio(); const t = ctx.currentTime;
         const osc = ctx.createOscillator(); const g = ctx.createGain();
-        osc.type = 'sine'; osc.frequency.value = 1000;
+        osc.type = 'sine'; osc.frequency.value = 60;
         g.gain.setValueAtTime(0.05, t);
         g.gain.setValueAtTime(0, t + 0.008);
         osc.connect(g); g.connect(ctx.destination);
