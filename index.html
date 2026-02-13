@@ -3841,27 +3841,30 @@
         setTimeout(tick, 800);
       }
 
-      // Start the greeting after a brief rain-only moment
-      // First click anywhere activates audio context (browser policy)
-      let audioActivated = false;
+      // Require a click to activate audio (browser policy), then start greeting
+      greetingEl.innerHTML = '<span style="opacity:0.4;font-size:14px;cursor:pointer;animation:blink 1.2s step-end infinite">CLICK TO ENTER</span>';
+      overlay.style.cursor = 'pointer';
       overlay.addEventListener('click', function activateOnce() {
-        if (!audioActivated) { ensureAudio(); audioActivated = true; }
-      }, { capture: true });
-
-      setTimeout(() => {
-        matrixType(greetingEl, 'Hello, anon.', 80, () => {
-          // Stop rain, fade to black
-          matrixRainActive = false;
-          rainCanvas.style.transition = 'opacity 1s ease';
-          rainCanvas.style.opacity = '0';
-          setTimeout(() => {
-            greetingEl.innerHTML = 'Hello, anon.';
-            pillChoice.classList.add('visible');
-            pillChoice.offsetHeight;
-            pillChoice.style.opacity = '1';
-          }, 600);
-        });
-      }, 1500);
+        overlay.removeEventListener('click', activateOnce);
+        overlay.style.cursor = '';
+        ensureAudio();
+        SFX.bootUp();
+        greetingEl.innerHTML = '';
+        setTimeout(() => {
+          matrixType(greetingEl, 'Hello, anon.', 80, () => {
+            // Stop rain, fade to black
+            matrixRainActive = false;
+            rainCanvas.style.transition = 'opacity 1s ease';
+            rainCanvas.style.opacity = '0';
+            setTimeout(() => {
+              greetingEl.innerHTML = 'Hello, anon.';
+              pillChoice.classList.add('visible');
+              pillChoice.offsetHeight;
+              pillChoice.style.opacity = '1';
+            }, 600);
+          });
+        }, 600);
+      });
 
       // ======== PILL SOUND — plays on hover (first hover activates audio) ========
       function playPillHover(isRed) {
