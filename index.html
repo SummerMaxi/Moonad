@@ -3213,13 +3213,20 @@
         case 'switching':
           SFX.phaseChange();
           tr.classList.remove('visible');
-          typeText(pd, '> SWITCH OR HOLD', 40);
-          setTimeout(() => { pd.classList.add('hidden'); }, 2500);
+          if (!RM.seeded) {
+            pd.classList.add('hidden');
+          } else {
+            typeText(pd, '> SWITCH OR HOLD', 40);
+            setTimeout(() => { pd.classList.add('hidden'); }, 2500);
+          }
           pi.innerHTML = '<span class="phase-badge switching">SWITCHING</span>';
-          trigBtn.textContent = RM.myBet ? '[ REVIEW / SWITCH ]' : '[ PLACE YOUR BETS ]';
-          trigBtn.classList.add('visible');
-          showTrackBanner();
+          if (RM.seeded) {
+            trigBtn.textContent = RM.myBet ? '[ REVIEW / SWITCH ]' : '[ PLACE YOUR BETS ]';
+            trigBtn.classList.add('visible');
+          }
+          if (RM.seeded) showTrackBanner();
           renderBullCards();
+          updateSeedButton();
           if (loadedModel && RM.seeded && bulls.length === 0) spawnBulls();
           if (RM.myBet) {
             ybp.classList.add('visible');
