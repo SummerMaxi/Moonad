@@ -3812,6 +3812,9 @@
       }
       drawRain();
 
+      // Start rain ambience with the animation — sound will begin once user clicks (browser policy)
+      startRainAmbience();
+
       // ======== MATRIX GREETING SEQUENCE ========
       const greetingEl = document.getElementById('matrix-greeting');
       const pillChoice = document.getElementById('pill-choice');
@@ -3890,7 +3893,6 @@
         overlay.removeEventListener('click', activateOnce);
         overlay.style.cursor = '';
         ensureAudio();
-        startRainAmbience();
         SFX.bootUp();
         greetingEl.innerHTML = '';
         setTimeout(() => {
