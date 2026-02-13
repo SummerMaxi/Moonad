@@ -1574,7 +1574,7 @@
     }
 
     // ======== SCORE COMPUTATION ========
-    function computeScore(stats, trackType) {
+    function computeScore(stats, trackType, bullIndex) {
       const mults = TRACK_MULTIPLIERS[trackType];
       let score = 0;
       for (let i = 0; i < 6; i++) {
@@ -1584,9 +1584,32 @@
           score += stats[i] * mults[i];
         }
       }
-      // noise ±15
-      score += Math.floor(Math.random() * 31) - 15;
+      // Replicate on-chain noise: keccak256(abi.encode(seed, bullIndex)) % 20
+      if (RM.raceSeed) {
+        const encoded = ethers.AbiCoder.defaultAbiCoder().encode(['bytes32', 'uint8'], [RM.raceSeed, bullIndex]);
+        const hash = ethers.keccak256(encoded);
+        score += Number(BigInt(hash) % 20n);
+      }
       return score;
+    }
+
+    /** Fetch on-chain resolved results. Returns true if results were loaded, false otherwise. */
+    async function fetchOnChainResults(raceId) {
+      try {
+        const info = await contract.getRaceInfo(raceId);
+        if (info.resolved) {
+          RM.raceResolved = true;
+          const results = await contract.getRaceResults(raceId);
+          RM.finishOrder = Array.from(results.finishOrder).map(Number);
+          RM.scores = new Array(NUM_BULLS).fill(0);
+          for (let r = 0; r < NUM_BULLS; r++) RM.scores[RM.finishOrder[r]] = NUM_BULLS - r;
+          console.log('On-chain results loaded:', RM.finishOrder);
+          return true;
+        }
+      } catch (e) {
+        console.warn('fetchOnChainResults error:', e);
+      }
+      return false;
     }
 
     // ======== GENERATE RACE DATA ========
@@ -1595,6 +1618,7 @@
       RM.bullPools = {};
       RM.seeded = false;
       RM.raceResolved = false;
+      RM.raceSeed = null;
       RM.bullStats = [];
       for (let i = 0; i < NUM_BULLS; i++) RM.bullStats.push([5, 5, 5, 5, 5, 5]);
       RM.trackType = 0;
@@ -1609,6 +1633,7 @@
         const seedData = await contract.getRaceSeedData(raceId);
         if (seedData.seeded) {
           RM.seeded = true;
+          RM.raceSeed = seedData.seed; // Store VRF seed for deterministic local computation
           // Unpack 48-element flat array into 8 bulls × 6 stats
           RM.bullStats = [];
           for (let i = 0; i < NUM_BULLS; i++) {
@@ -1812,13 +1837,8 @@
           break;
         case 'CLOSED':
           try {
-            const info = await contract.getRaceInfo(live.raceId);
-            if (info.resolved) {
-              RM.raceResolved = true;
-              const results = await contract.getRaceResults(live.raceId);
-              RM.finishOrder = Array.from(results.finishOrder).map(Number);
-              RM.scores = new Array(NUM_BULLS).fill(0);
-              for (let r = 0; r < NUM_BULLS; r++) RM.scores[RM.finishOrder[r]] = NUM_BULLS - r;
+            const resolved = await fetchOnChainResults(live.raceId);
+            if (resolved) {
               setPhase('results');
             } else {
               // Race not resolved yet — compute local results for display
@@ -1882,15 +1902,10 @@
           updatePoolDisplay();
           if (RM.phase === 'betting' || RM.phase === 'switching') renderBullCards();
 
-          // In results phase: check if race has been resolved on-chain (for display accuracy)
-          if (RM.phase === 'results' && !RM.raceResolved) {
-            const info = await contract.getRaceInfo(live.raceId);
-            if (info.resolved) {
-              RM.raceResolved = true;
-              const results = await contract.getRaceResults(live.raceId);
-              RM.finishOrder = Array.from(results.finishOrder).map(Number);
-              RM.scores = new Array(NUM_BULLS).fill(0);
-              for (let r = 0; r < NUM_BULLS; r++) RM.scores[RM.finishOrder[r]] = NUM_BULLS - r;
+          // In racing or results phase: check if race has been resolved on-chain
+          if ((RM.phase === 'results' || RM.phase === 'racing') && !RM.raceResolved) {
+            const resolved = await fetchOnChainResults(live.raceId);
+            if (resolved && RM.phase === 'results') {
               renderResults(); updateClaimBanner();
             }
           }
@@ -1914,7 +1929,7 @@
     function computeRaceResults() {
       RM.scores = [];
       for (let i = 0; i < NUM_BULLS; i++) {
-        RM.scores.push(computeScore(RM.bullStats[i], RM.trackType));
+        RM.scores.push(computeScore(RM.bullStats[i], RM.trackType, i));
       }
       // Sort indices by score descending
       RM.finishOrder = Array.from({ length: NUM_BULLS }, (_, i) => i);
@@ -3258,19 +3273,28 @@
           hideBullStatPopup();
           // Spawn bulls if not already (mid-race join)
           if (loadedModel && bulls.length === 0) spawnBulls();
-          computeRaceResults();
+          // Use on-chain results if already resolved, else compute locally
+          if (!RM.raceResolved) computeRaceResults();
           // Check if joining mid-race — fast-forward bull positions
-          const live = getLiveState();
-          const elapsedInClosed = live.elapsed - liveSwitchingEnd;
-          if (elapsedInClosed > 6) {
-            // Skip countdown, start race immediately and fast-forward
-            startRaceMidJoin(elapsedInClosed - 3); // subtract 3s countdown
-            // If all bulls already finished, go straight to results
-            if (raceOver) {
-              setTimeout(() => { if (RM.phase === 'racing') setPhase('results'); }, 2000);
+          {
+            const live = getLiveState();
+            const elapsedInClosed = live.elapsed - liveSwitchingEnd;
+            if (elapsedInClosed > 6) {
+              // Skip countdown, start race immediately and fast-forward
+              startRaceMidJoin(elapsedInClosed - 3); // subtract 3s countdown
+              // If all bulls already finished, go straight to results
+              if (raceOver) {
+                setTimeout(() => { if (RM.phase === 'racing') setPhase('results'); }, 2000);
+              }
+            } else {
+              startRace();
             }
-          } else {
-            startRace();
+          }
+          // Try to fetch on-chain results in background (will update RM.finishOrder/scores)
+          if (!RM.raceResolved) {
+            fetchOnChainResults(RM.raceId).then(resolved => {
+              if (resolved) console.log('On-chain results fetched during race — results phase will use them');
+            });
           }
           break;
         }
@@ -3286,6 +3310,14 @@
           // If bulls aren't spawned (page refresh during results), spawn them at finish
           if (loadedModel && RM.seeded && bulls.length === 0) {
             spawnBullsAtFinish();
+          }
+          // Immediately try to fetch on-chain results (updates display if local computation was wrong)
+          if (!RM.raceResolved) {
+            fetchOnChainResults(RM.raceId).then(resolved => {
+              if (resolved && RM.phase === 'results') {
+                renderResults(); updateClaimBanner();
+              }
+            });
           }
           break;
       }
