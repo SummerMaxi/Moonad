@@ -2031,7 +2031,6 @@
       } else if (isMyBet && RM.phase === 'switching') {
         btnHtml = `<button class="carousel-bet-btn placed">[ CURRENT BET ]</button>`;
         btnHtml += `<div style="color:var(--secondary);font-size:10px;margin-top:6px;text-align:center">YOUR BET: ${RM.myBet.amount.toFixed(2)} MON</div>`;
-        btnHtml += `<button class="carousel-bet-btn" style="border-color:var(--secondary);color:var(--secondary);margin-top:8px" onclick="openSwitchMode()">[ SWITCH BET ] (5% FEE)</button>`;
       } else if (!isMyBet && RM.myBet && RM.phase === 'switching') {
         const remaining = (RM.myBet.amount * 0.95).toFixed(2);
         btnHtml = `<button class="carousel-bet-btn" style="border-color:var(--secondary);color:var(--secondary)" onclick="RM.switchMode=true; confirmSwitch(${i})">[ SWITCH TO ${bc.name.toUpperCase()} ]</button>`;
