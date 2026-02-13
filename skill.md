@@ -106,7 +106,7 @@ A bull with no bets has undefined odds (infinite upside if it wins).
 |--------------------|--------------------------------------------- |
 | **Chain**          | Monad (chainId 143)                          |
 | **RPC**            | `https://rpc.monad.xyz`                      |
-| **Contract**       | `0x5cDe7556da1818aE4880B260cF4B55c93ffD4644` |
+| **Contract**       | `0xc86Ee7CBf1D643922faaEB4Ff3618838407546C1` |
 | **Token**          | Native MON (`address(0)`)                    |
 | **Min Bet**        | 0.01 MON (`10000000000000000` wei)           |
 | **Explorer**       | `https://monadexplorer.com`                  |
@@ -239,7 +239,7 @@ const RPC_URL = process.env.RPC_URL || "https://rpc.monad.xyz";
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
 const BET_MON = process.env.BET_MON || "0.05";
 const SEED_RACES = process.env.SEED_RACES === "true";
-const CONTRACT = "0x5cDe7556da1818aE4880B260cF4B55c93ffD4644";
+const CONTRACT = "0xc86Ee7CBf1D643922faaEB4Ff3618838407546C1";
 const ZERO_ADDR = "0x0000000000000000000000000000000000000000";
 
 if (!PRIVATE_KEY) {
