@@ -120,33 +120,79 @@
     #phase-display.lfg::after { content: ''; }
     #phase-display.hidden { display: none; }
 
-    /* Start overlay — click to activate audio + begin */
+    /* Start overlay — Matrix themed */
     #start-overlay {
       position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-      background: var(--bg); z-index: 200; display: flex;
-      flex-direction: column; align-items: center; justify-content: center;
+      background: #000; z-index: 200;
       font-family: var(--font); color: var(--primary);
-      text-shadow: var(--glow);
     }
     #start-overlay.hidden { display: none; }
-    #start-overlay .boot-lines {
+    #matrix-rain {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      z-index: 0;
+    }
+    #matrix-content {
+      position: relative; z-index: 1; width: 100%; height: 100%;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+    }
+    #matrix-greeting {
+      font-family: var(--font); font-size: 22px; color: var(--primary);
+      text-shadow: 0 0 8px rgba(51, 255, 0, 0.6), 0 0 20px rgba(51, 255, 0, 0.3);
+      letter-spacing: 3px; margin-bottom: 40px;
+      min-height: 30px;
+    }
+    #matrix-greeting .cursor {
+      display: inline-block; width: 10px; height: 22px;
+      background: var(--primary); margin-left: 2px;
+      animation: blink 0.7s step-end infinite;
+      vertical-align: text-bottom;
+    }
+    #pill-choice {
+      display: none; flex-direction: column; align-items: center; gap: 24px;
+      opacity: 0; transition: opacity 0.8s ease;
+    }
+    #pill-choice.visible { display: flex; opacity: 1; }
+    #pill-label {
+      font-size: 13px; color: rgba(51, 255, 0, 0.5); letter-spacing: 2px;
+      margin-bottom: 4px;
+    }
+    #pill-buttons { display: flex; gap: 40px; }
+    .pill-btn {
+      font-family: var(--font); font-size: 14px; font-weight: 700;
+      letter-spacing: 2px; padding: 14px 32px;
+      background: transparent; cursor: pointer;
+      transition: all 0.3s ease; position: relative;
+    }
+    #btn-human {
+      border: 2px solid #ff2020; color: #ff2020;
+      text-shadow: 0 0 8px rgba(255, 32, 32, 0.5);
+    }
+    #btn-human:hover {
+      background: #ff2020; color: #000;
+      text-shadow: none;
+      box-shadow: 0 0 20px rgba(255, 32, 32, 0.6), 0 0 40px rgba(255, 32, 32, 0.3);
+    }
+    #btn-agent {
+      border: 2px solid #2080ff; color: #2080ff;
+      text-shadow: 0 0 8px rgba(32, 128, 255, 0.5);
+    }
+    #btn-agent:hover {
+      background: #2080ff; color: #000;
+      text-shadow: none;
+      box-shadow: 0 0 20px rgba(32, 128, 255, 0.6), 0 0 40px rgba(32, 128, 255, 0.3);
+    }
+    .pill-desc {
+      font-size: 9px; color: rgba(255,255,255,0.3); letter-spacing: 1px;
+      margin-top: 6px; text-align: center;
+    }
+    #pill-human-desc { color: rgba(255, 32, 32, 0.4); }
+    #pill-agent-desc { color: rgba(32, 128, 255, 0.4); }
+    .boot-lines {
       font-size: 12px; color: var(--primary); text-align: left;
       margin-bottom: 24px; line-height: 1.8;
+      text-shadow: 0 0 5px rgba(51, 255, 0, 0.5);
     }
-    #start-overlay .boot-lines .ok { color: var(--primary); }
-    #start-overlay .start-prompt {
-      font-size: 16px; font-weight: 700; letter-spacing: 3px;
-      text-align: center;
-    }
-    #start-overlay .start-prompt button:hover {
-      background: var(--primary) !important;
-      color: var(--bg) !important;
-      text-shadow: none !important;
-    }
-    #start-overlay #btn-agent:hover {
-      background: var(--secondary) !important;
-      color: var(--bg) !important;
-    }
+    .boot-lines .ok { color: var(--primary); }
     @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 
     /* Countdown */
@@ -852,24 +898,23 @@
   </div>
 
   <div id="start-overlay" class="hidden">
-    <div class="boot-lines" id="boot-lines"></div>
-    <div class="start-prompt" id="start-prompt">
-      <div style="margin-bottom: 18px; font-size: 12px; color: var(--muted); letter-spacing: 1px;">SELECT MODE</div>
-      <div id="mode-buttons" style="display: flex; gap: 16px;">
-        <button id="btn-human" style="
-          font-family: var(--font); font-size: 14px; font-weight: 700;
-          letter-spacing: 2px; padding: 12px 28px;
-          background: transparent; border: 1px solid var(--primary);
-          color: var(--primary); cursor: pointer;
-          text-shadow: var(--glow);
-        ">[ HUMAN ]</button>
-        <button id="btn-agent" style="
-          font-family: var(--font); font-size: 14px; font-weight: 700;
-          letter-spacing: 2px; padding: 12px 28px;
-          background: transparent; border: 1px solid var(--secondary);
-          color: var(--secondary); cursor: pointer;
-        ">[ AGENT ]</button>
+    <canvas id="matrix-rain"></canvas>
+    <div id="matrix-content">
+      <div id="matrix-greeting"></div>
+      <div id="pill-choice">
+        <div id="pill-label">CHOOSE YOUR PATH</div>
+        <div id="pill-buttons">
+          <div style="text-align:center">
+            <button id="btn-human" class="pill-btn">RED PILL</button>
+            <div class="pill-desc" id="pill-human-desc">ENTER THE RACE</div>
+          </div>
+          <div style="text-align:center">
+            <button id="btn-agent" class="pill-btn">BLUE PILL</button>
+            <div class="pill-desc" id="pill-agent-desc">LET THE BOT PLAY</div>
+          </div>
+        </div>
       </div>
+      <div class="boot-lines" id="boot-lines"></div>
     </div>
   </div>
   <div id="phase-display">&gt; loading_model</div>
@@ -1208,6 +1253,7 @@
         camMode = btn.dataset.mode;
         controls.enabled = (camMode === 'free');
         updateCamButtons();
+        SFX.tick();
       });
     });
     renderer.domElement.addEventListener('pointerdown', () => {
@@ -1543,12 +1589,18 @@
     function generateRaceData() {
       RM.myBet = null;
       RM.bullPools = {};
+      RM.seeded = false;
+      RM.raceResolved = false;
+      RM.bullStats = [];
+      for (let i = 0; i < NUM_BULLS; i++) RM.bullStats.push([5, 5, 5, 5, 5, 5]);
+      RM.trackType = 0;
       loadLiveRaceData();
     }
 
     async function loadLiveRaceData() {
       try {
-        const raceId = await contract.getCurrentRaceId();
+        // Use frontend-computed raceId (from UTC clock) to avoid clock skew with on-chain block.timestamp
+        const raceId = RM.raceId;
         RM.liveRaceId = raceId;
         const seedData = await contract.getRaceSeedData(raceId);
         if (seedData.seeded) {
@@ -1900,6 +1952,12 @@
           } else {
             cardBtnHtml = `<button class="bet-btn" style="border-color:var(--secondary);color:var(--secondary)" onclick="confirmSwitch(${i})">[ SWITCH ]</button>`;
           }
+        } else if (RM.phase === 'switching' && RM.myBet) {
+          if (isMyBet) {
+            cardBtnHtml = `<button class="bet-btn placed">[ CURRENT ]</button>`;
+          } else {
+            cardBtnHtml = `<button class="bet-btn" style="border-color:var(--secondary);color:var(--secondary)" onclick="RM.switchMode=true; confirmSwitch(${i})">[ SWITCH TO ${bc.name.toUpperCase()} ]</button>`;
+          }
         } else {
           cardBtnHtml = `<button class="bet-btn ${isMyBet ? 'placed' : ''}" onclick="openBetModal(${i})">${isMyBet ? '[ BET PLACED ]' : '[ BET ]'}</button>`;
         }
@@ -1967,9 +2025,13 @@
           btnHtml += `<div style="color:var(--muted);font-size:9px;margin-top:4px;text-align:center">5% fee \u2192 ${remaining} MON</div>`;
         }
       } else if (isMyBet && RM.phase === 'switching') {
-        btnHtml = `<button class="carousel-bet-btn placed">[ BET PLACED \u2713 ]</button>`;
+        btnHtml = `<button class="carousel-bet-btn placed">[ CURRENT BET ]</button>`;
         btnHtml += `<div style="color:var(--secondary);font-size:10px;margin-top:6px;text-align:center">YOUR BET: ${RM.myBet.amount.toFixed(2)} MON</div>`;
         btnHtml += `<button class="carousel-bet-btn" style="border-color:var(--secondary);color:var(--secondary);margin-top:8px" onclick="openSwitchMode()">[ SWITCH BET ] (5% FEE)</button>`;
+      } else if (!isMyBet && RM.myBet && RM.phase === 'switching') {
+        const remaining = (RM.myBet.amount * 0.95).toFixed(2);
+        btnHtml = `<button class="carousel-bet-btn" style="border-color:var(--secondary);color:var(--secondary)" onclick="RM.switchMode=true; confirmSwitch(${i})">[ SWITCH TO ${bc.name.toUpperCase()} ]</button>`;
+        btnHtml += `<div style="color:var(--muted);font-size:9px;margin-top:4px;text-align:center">5% fee \u2192 ${remaining} MON</div>`;
       } else if (isMyBet) {
         btnHtml = `<button class="carousel-bet-btn placed">[ BET PLACED \u2713 ]</button>`;
         btnHtml += `<div style="color:var(--secondary);font-size:10px;margin-top:6px;text-align:center">YOUR BET: ${RM.myBet.amount.toFixed(2)} MON</div>`;
@@ -2584,8 +2646,8 @@
         <span style="color:var(--secondary)">${odds}x</span>
       </div>`;
 
-      if (RM.switchMode && RM.myBet && RM.myBet.bullIndex !== bullIndex) {
-        html += `<button class="popup-bet-btn" style="border-color:var(--secondary);color:var(--secondary)" onclick="hideBullStatPopup(); confirmSwitch(${bullIndex})">[ SWITCH TO ${bc.name.toUpperCase()} ]</button>`;
+      if ((RM.switchMode || RM.phase === 'switching') && RM.myBet && RM.myBet.bullIndex !== bullIndex) {
+        html += `<button class="popup-bet-btn" style="border-color:var(--secondary);color:var(--secondary)" onclick="hideBullStatPopup(); RM.switchMode=true; confirmSwitch(${bullIndex})">[ SWITCH TO ${bc.name.toUpperCase()} ]</button>`;
       } else if ((RM.phase === 'betting' || RM.phase === 'switching') && !RM.myBet && RM.walletConnected) {
         html += `<button class="popup-bet-btn" onclick="hideBullStatPopup(); openBetModal(${bullIndex})">[ BET ON ${bc.name.toUpperCase()} ]</button>`;
       }
@@ -3206,11 +3268,15 @@
         case 'results':
           SFX.phaseChange();
           pd.style.display = 'none';
-          pi.innerHTML = '';
+          pi.innerHTML = '<span class="phase-badge" style="background:var(--muted);color:#ccc">CLOSED</span>';
           renderResults();
           rp.classList.add('visible');
           updateClaimBanner();
           updateBalanceDisplay();
+          // If bulls aren't spawned (page refresh during results), spawn them at finish
+          if (loadedModel && RM.seeded && bulls.length === 0) {
+            spawnBullsAtFinish();
+          }
           break;
       }
 
@@ -3548,11 +3614,14 @@
           bull.finishTime = nowElapsed - raceElapsed * 0.7; // approximate past finish
           bull.isWalking = true;
           bull.isIdling = true;
+          // Stop all actions before playing idle (walk was started in spawnBulls)
+          bull.mixer.stopAllAction();
           bull.idleAction.reset().play();
         } else {
           bull.isRunning = true;
           bull.runAction.timeScale = 0.8 + (bull.speed / 15) * 0.6;
-          bull.idleAction.fadeOut(0); bull.runAction.reset().fadeIn(0).play();
+          bull.walkAction.stop();
+          bull.runAction.reset().fadeIn(0).play();
         }
       }
       nextRank = rank;
@@ -3561,6 +3630,39 @@
       // Start race timer offset by elapsed time
       raceStarted = true;
       raceStartTime = clock.getElapsedTime() - raceElapsed;
+    }
+
+    /** Spawn bulls at finish line for results display (page refresh during results) */
+    function spawnBullsAtFinish() {
+      spawnBulls();
+      // Position all bulls past the finish line with idle/lie animations
+      const spread = 8; // spread bulls slightly so they're not stacked
+      for (let i = 0; i < bulls.length; i++) {
+        const bull = bulls[i];
+        // Use finish order if available, otherwise spread by index
+        const rank = RM.finishOrder ? RM.finishOrder.indexOf(i) : i;
+        bull.racePos = FINISH_X + spread + (NUM_BULLS - rank) * 3;
+        bull.group.position.x = bull.racePos;
+        bull.finished = true;
+        bull.finishRank = rank + 1;
+        bull.finishTime = clock.getElapsedTime() - 30; // well in the past
+        bull.isWalking = true;
+        bull.isIdling = true;
+        // Stop walk from spawn, play idle or lie down
+        bull.mixer.stopAllAction();
+        if (rank === 0) {
+          bull.idleAction.reset().play(); // winner idles
+        } else {
+          bull.lieStartAction.reset().play(); // losers lie down
+          bull.isLying = true;
+        }
+      }
+      nextRank = NUM_BULLS + 1;
+      raceOver = true;
+      raceStarted = true;
+      raceStartTime = clock.getElapsedTime() - 60;
+      // Position camera at finish area
+      cameraReady = false;
     }
 
     function startCountdown() {
@@ -3640,13 +3742,141 @@
         console.log(`Auto-detected rotation: ${(bestRotY * 180 / Math.PI).toFixed(0)}`);
       }
 
-      // Model loaded — show boot screen, wait for click to activate audio
+      // Model loaded — show Matrix start screen
       const pd = document.getElementById('phase-display');
       pd.style.display = 'none';
 
       const overlay = document.getElementById('start-overlay');
       const bootEl = document.getElementById('boot-lines');
       overlay.classList.remove('hidden');
+
+      // ======== MATRIX DIGITAL RAIN ========
+      const rainCanvas = document.getElementById('matrix-rain');
+      const rainCtx = rainCanvas.getContext('2d');
+      function resizeRain() {
+        rainCanvas.width = window.innerWidth;
+        rainCanvas.height = window.innerHeight;
+      }
+      resizeRain();
+      window.addEventListener('resize', resizeRain);
+
+      const matrixChars = 'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ$@#&%';
+      const fontSize = 14;
+      let columns = Math.floor(rainCanvas.width / fontSize);
+      let drops = new Array(columns).fill(0).map(() => Math.random() * -100);
+
+      let matrixRainActive = true;
+      function drawRain() {
+        if (!matrixRainActive) return;
+        columns = Math.floor(rainCanvas.width / fontSize);
+        while (drops.length < columns) drops.push(Math.random() * -50);
+
+        rainCtx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+        rainCtx.fillRect(0, 0, rainCanvas.width, rainCanvas.height);
+        rainCtx.font = fontSize + 'px monospace';
+
+        for (let i = 0; i < columns; i++) {
+          if (drops[i] * fontSize > rainCanvas.height && Math.random() > 0.975) {
+            drops[i] = 0;
+          }
+          if (drops[i] >= 0) {
+            const char = matrixChars[Math.floor(Math.random() * matrixChars.length)];
+            // Lead character is brighter
+            const y = drops[i] * fontSize;
+            rainCtx.fillStyle = '#33ff00';
+            rainCtx.globalAlpha = 0.9;
+            rainCtx.fillText(char, i * fontSize, y);
+            // Previous chars fade
+            if (drops[i] > 1) {
+              const prevChar = matrixChars[Math.floor(Math.random() * matrixChars.length)];
+              rainCtx.globalAlpha = 0.4;
+              rainCtx.fillStyle = '#0f6600';
+              rainCtx.fillText(prevChar, i * fontSize, y - fontSize);
+            }
+            rainCtx.globalAlpha = 1;
+          }
+          drops[i] += 0.5 + Math.random() * 0.5;
+        }
+        requestAnimationFrame(drawRain);
+      }
+      drawRain();
+
+      // ======== MATRIX GREETING SEQUENCE ========
+      const greetingEl = document.getElementById('matrix-greeting');
+      const pillChoice = document.getElementById('pill-choice');
+
+      // Type out greeting with Matrix-style delay
+      function matrixType(el, text, speed, cb) {
+        let i = 0;
+        el.innerHTML = '<span class="cursor"></span>';
+        function tick() {
+          if (i < text.length) {
+            el.innerHTML = text.slice(0, i + 1) + '<span class="cursor"></span>';
+            i++;
+            const delay = text[i - 1] === '.' ? speed * 6 : text[i - 1] === ',' ? speed * 3 : speed;
+            setTimeout(tick, delay);
+          } else {
+            // Keep cursor blinking for a moment, then callback
+            setTimeout(() => {
+              el.innerHTML = text + '<span class="cursor"></span>';
+              if (cb) cb();
+            }, 500);
+          }
+        }
+        setTimeout(tick, 800);
+      }
+
+      // Start the greeting after a brief rain-only moment
+      setTimeout(() => {
+        matrixType(greetingEl, 'Hello, visitor.', 80, () => {
+          setTimeout(() => {
+            greetingEl.innerHTML = 'Hello, visitor.';
+            pillChoice.classList.add('visible');
+            // Force reflow then set opacity
+            pillChoice.offsetHeight;
+            pillChoice.style.opacity = '1';
+          }, 600);
+        });
+      }, 1500);
+
+      // ======== PILL SOUND — plays on hover (first hover activates audio) ========
+      function playPillHover(isRed) {
+        const ctx = ensureAudio(); const t = ctx.currentTime;
+        const freq = isRed ? 220 : 330;
+        const osc = ctx.createOscillator(); const g = ctx.createGain();
+        osc.type = 'sine'; osc.frequency.value = freq;
+        g.gain.setValueAtTime(0.06, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+        osc.connect(g); g.connect(ctx.destination);
+        osc.start(t); osc.stop(t + 0.15);
+      }
+      document.getElementById('btn-human').addEventListener('mouseenter', () => playPillHover(true));
+      document.getElementById('btn-agent').addEventListener('mouseenter', () => playPillHover(false));
+
+      // ======== PILL SELECT SOUND ========
+      function playPillSelect(isRed) {
+        const ctx = ensureAudio(); const t = ctx.currentTime;
+        // Impact noise
+        const noise = ctx.createBufferSource();
+        noise.buffer = _noiseBuf(ctx, 0.2);
+        const bp = ctx.createBiquadFilter();
+        bp.type = 'bandpass'; bp.frequency.value = isRed ? 800 : 1200; bp.Q.value = 1;
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.15, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+        noise.connect(bp); bp.connect(ng); ng.connect(ctx.destination);
+        noise.start(t); noise.stop(t + 0.2);
+        // Tonal sweep
+        const freqs = isRed ? [220, 330, 440, 660] : [330, 440, 550, 880];
+        freqs.forEach((f, i) => {
+          const osc = ctx.createOscillator(); const g = ctx.createGain();
+          osc.type = 'square'; osc.frequency.value = f;
+          g.gain.setValueAtTime(0.1, t + i * 0.06);
+          g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.06 + 0.15);
+          osc.connect(g); g.connect(ctx.destination);
+          osc.start(t + i * 0.06); osc.stop(t + i * 0.06 + 0.15);
+        });
+      }
 
       const bootMsgs = [
         ['> MOONAD BULL RACE v1.0', 'ok'],
@@ -3681,16 +3911,10 @@
         tick();
       }
 
-      // Agent button → redirect to skill.md
-      document.getElementById('btn-agent').addEventListener('click', function() {
-        window.location.href = '/skill.md';
-      });
-
-      // Human button → activate audio → type boot lines with sound → LFG → start
-      document.getElementById('btn-human').addEventListener('click', function startClick() {
-        document.getElementById('btn-human').removeEventListener('click', startClick);
-        document.getElementById('start-prompt').style.display = 'none';
-        ensureAudio();
+      function startBootSequence() {
+        // Hide greeting and pills, show boot lines
+        greetingEl.style.display = 'none';
+        pillChoice.style.display = 'none';
 
         let bootIdx = 0;
         function showNextBoot() {
@@ -3705,7 +3929,8 @@
               setTimeout(showNextBoot, 200);
             });
           } else {
-            // All boot lines done → LFG
+            // All boot lines done — fade out rain, show LFG
+            matrixRainActive = false;
             setTimeout(() => {
               overlay.classList.add('hidden');
               pd.style.display = 'block';
@@ -3722,6 +3947,21 @@
           }
         }
         showNextBoot();
+      }
+
+      // Agent button → redirect to skill.md
+      document.getElementById('btn-agent').addEventListener('click', function() {
+        ensureAudio();
+        playPillSelect(false);
+        setTimeout(() => { window.location.href = '/skill.md'; }, 500);
+      });
+
+      // Human button → activate audio → boot sequence → start
+      document.getElementById('btn-human').addEventListener('click', function startClick() {
+        document.getElementById('btn-human').removeEventListener('click', startClick);
+        ensureAudio();
+        playPillSelect(true);
+        setTimeout(startBootSequence, 600);
       });
 
     }, (progress) => {
