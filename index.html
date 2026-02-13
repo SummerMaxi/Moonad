@@ -3139,18 +3139,16 @@
           break;
 
         case 'racing': {
-          // If race was never seeded, skip racing entirely — no results to show
+          // If race was never seeded, show message and wait for cycle to end via UTC timer
           if (!RM.seeded) {
-            typeText(pd, '> NO SEED — RACE SKIPPED', 30);
+            const live = getLiveState();
+            const remaining = liveCycleDuration - live.elapsed;
+            const m = Math.floor(remaining / 60);
+            const s = Math.floor(remaining % 60);
+            typeText(pd, `> NO SEED — WAITING FOR NEXT RACE`, 30);
             pi.innerHTML = '<span class="phase-badge" style="background:var(--muted);color:#ccc">NO SEED</span>';
             ybp.classList.remove('visible');
-            // Wait briefly then jump to next race
-            setTimeout(() => {
-              if (RM.phase === 'racing') {
-                cleanupRace();
-                setPhase('waiting');
-              }
-            }, 4000);
+            // Normal auto-advance will handle transition when cycle ends
             break;
           }
           SFX.raceHorn();
@@ -3282,10 +3280,18 @@
           if (nrt) nrt.textContent = `> next race in ${timeStr}`;
         }
       } else if (RM.phase === 'racing') {
-        // During racing, show elapsed race time
-        const elapsed = clock.getElapsedTime() - raceStartTime;
-        if (raceStarted) {
-          document.getElementById('clock-display').textContent = `> race ${formatTime(elapsed)}`;
+        if (!RM.seeded) {
+          // Unseeded: show countdown to next race
+          const m = Math.floor(remaining / 60);
+          const s = Math.floor(remaining % 60);
+          const timeStr = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+          document.getElementById('clock-display').textContent = `> next race in ${timeStr}`;
+        } else {
+          // Normal race: show elapsed race time
+          const elapsed = clock.getElapsedTime() - raceStartTime;
+          if (raceStarted) {
+            document.getElementById('clock-display').textContent = `> race ${formatTime(elapsed)}`;
+          }
         }
       }
 
