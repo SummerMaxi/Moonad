@@ -126,7 +126,7 @@
       background: var(--bg); z-index: 200; display: flex;
       flex-direction: column; align-items: center; justify-content: center;
       font-family: var(--font); color: var(--primary);
-      text-shadow: var(--glow); cursor: pointer;
+      text-shadow: var(--glow);
     }
     #start-overlay.hidden { display: none; }
     #start-overlay .boot-lines {
@@ -136,7 +136,16 @@
     #start-overlay .boot-lines .ok { color: var(--primary); }
     #start-overlay .start-prompt {
       font-size: 16px; font-weight: 700; letter-spacing: 3px;
-      animation: blink 1s step-end infinite;
+      text-align: center;
+    }
+    #start-overlay .start-prompt button:hover {
+      background: var(--primary) !important;
+      color: var(--bg) !important;
+      text-shadow: none !important;
+    }
+    #start-overlay #btn-agent:hover {
+      background: var(--secondary) !important;
+      color: var(--bg) !important;
     }
     @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 
@@ -844,7 +853,24 @@
 
   <div id="start-overlay" class="hidden">
     <div class="boot-lines" id="boot-lines"></div>
-    <div class="start-prompt">[ CLICK TO START ]</div>
+    <div class="start-prompt" id="start-prompt">
+      <div style="margin-bottom: 18px; font-size: 12px; color: var(--muted); letter-spacing: 1px;">SELECT MODE</div>
+      <div id="mode-buttons" style="display: flex; gap: 16px;">
+        <button id="btn-human" style="
+          font-family: var(--font); font-size: 14px; font-weight: 700;
+          letter-spacing: 2px; padding: 12px 28px;
+          background: transparent; border: 1px solid var(--primary);
+          color: var(--primary); cursor: pointer;
+          text-shadow: var(--glow);
+        ">[ HUMAN ]</button>
+        <button id="btn-agent" style="
+          font-family: var(--font); font-size: 14px; font-weight: 700;
+          letter-spacing: 2px; padding: 12px 28px;
+          background: transparent; border: 1px solid var(--secondary);
+          color: var(--secondary); cursor: pointer;
+        ">[ AGENT ]</button>
+      </div>
+    </div>
   </div>
   <div id="phase-display">&gt; loading_model</div>
   <div id="winner">
@@ -3655,10 +3681,15 @@
         tick();
       }
 
-      // On click: activate audio → type boot lines with sound → LFG → start
-      overlay.addEventListener('click', function startClick() {
-        overlay.removeEventListener('click', startClick);
-        overlay.querySelector('.start-prompt').style.display = 'none';
+      // Agent button → redirect to skill.md
+      document.getElementById('btn-agent').addEventListener('click', function() {
+        window.location.href = '/skill.md';
+      });
+
+      // Human button → activate audio → type boot lines with sound → LFG → start
+      document.getElementById('btn-human').addEventListener('click', function startClick() {
+        document.getElementById('btn-human').removeEventListener('click', startClick);
+        document.getElementById('start-prompt').style.display = 'none';
         ensureAudio();
 
         let bootIdx = 0;
