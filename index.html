@@ -2406,6 +2406,14 @@
       if (audioCtx.state === 'suspended') audioCtx.resume();
       return audioCtx;
     }
+
+    // Resume audio + refresh timer when tab becomes visible again
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+        updatePhaseTimer();
+      }
+    });
     function playBeep(freq, duration, volume = 0.3) {
       const ctx = ensureAudio();
       const osc = ctx.createOscillator();
