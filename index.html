@@ -62,12 +62,15 @@
     #phase-indicator.waiting { background: var(--muted); color: #ccc; }
     #clock-display { color: var(--primary); font-weight: 700; font-size: 11px; letter-spacing: 1px; text-shadow: var(--glow); white-space: nowrap; }
     #pool-display {
+      position: absolute; top: 32px; left: 50%; transform: translateX(-50%);
+      background: rgba(10, 10, 10, 0.9);
+      border: 1px solid var(--muted);
+      padding: 3px 12px;
       color: var(--secondary); font-weight: 700; font-size: 11px;
       letter-spacing: 1px;
       text-shadow: 0 0 6px rgba(255,176,0,0.4);
-      margin-left: 6px;
-      padding-left: 8px;
-      border-left: 1px solid var(--muted);
+      white-space: nowrap;
+      pointer-events: auto;
     }
 
     /* Leaderboard */
@@ -811,9 +814,9 @@
       <span id="title-bar-center">
         <span id="phase-indicator"></span>
         <span id="clock-display">&gt; loading...</span>
-        <span id="pool-display">POOL: 0.00 MON</span>
       </span>
     </div>
+    <div id="pool-display">POOL: 0.00 MON</div>
     <div id="leaderboard">
       <div id="lb-header">+-- LEADERBOARD --+</div>
       <div id="lb-body"></div>
