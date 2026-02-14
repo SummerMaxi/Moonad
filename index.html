@@ -1693,6 +1693,9 @@
       const rewardText = document.getElementById('seed-reward-text');
       const pd = document.getElementById('phase-display');
       const live = getLiveState();
+      // Reset button text and pointer events for new race
+      btn.textContent = '[ SEED RACE ]';
+      btn.style.pointerEvents = '';
       // Show seed button only during BETTING/SWITCHING if not yet seeded
       if (!RM.seeded && (live.contractPhase === 'BETTING' || live.contractPhase === 'SWITCHING')) {
         btn.classList.add('visible');
@@ -3620,8 +3623,22 @@
       cleanupBulls();
       raceStarted = false;
       raceOver = false;
+      nextRank = 1;
+      countdownStarted = false;
       document.getElementById('results-panel').classList.remove('visible');
       document.getElementById('winner').style.display = 'none';
+      // Reset camera to start line
+      camTrackX = 0; lastCamTrackX = 0;
+      cameraReady = false;
+      camera.position.set(-12, 6, 12);
+      controls.target.set(0, 1.5, 0);
+      camera.lookAt(controls.target);
+      gridHelper.position.x = 0;
+      trackGrid.position.x = 0;
+      speedLines.position.x = 0;
+      sun.position.x = 10;
+      camMode = 'chase'; controls.enabled = false;
+      updateCamButtons();
     }
 
     function startRace() {
