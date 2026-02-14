@@ -1,0 +1,22 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Claude Code
+.claude/
+
+# Foundry build artifacts
+contracts/cache/
+contracts/out/
+
+# Dependencies (installed via forge install)
+contracts/lib/
+
+# Environment
+.env
+.env.local
+.env.*
