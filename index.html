@@ -3167,8 +3167,8 @@
       phaseInd.textContent = phaseLabels[phase] || phase.toUpperCase();
       phaseInd.classList.add(phase === 'results' || phase === 'revealing' ? 'closed' : phase);
 
-      // Reset visibility
-      pd.className = ''; pd.textContent = ''; pd.style.display = '';
+      // Reset visibility — keep pd hidden by default, each phase shows it if needed
+      pd.className = 'hidden'; pd.textContent = ''; pd.style.display = '';
       bc.classList.remove('visible');
       rp.classList.remove('visible');
       tr.classList.remove('visible');
@@ -3179,6 +3179,7 @@
       switch (phase) {
         case 'waiting':
           SFX.phaseChange();
+          pd.classList.remove('hidden');
           typeText(pd, '> generating_bulls');
           pi.innerHTML = '<span class="phase-badge" style="background:var(--muted);color:#ccc">WAITING</span>';
           document.getElementById('track-info').textContent = '> TRACK: --- | 8 BULLS';
@@ -3196,9 +3197,8 @@
 
         case 'betting':
           SFX.phaseChange();
-          if (!RM.seeded) {
-            pd.classList.add('hidden');
-          } else {
+          if (RM.seeded) {
+            pd.classList.remove('hidden');
             typeText(pd, '> PLACE YOUR BETS', 40);
             setTimeout(() => { pd.classList.add('hidden'); }, 2500);
           }
@@ -3245,9 +3245,8 @@
         case 'switching':
           SFX.phaseChange();
           tr.classList.remove('visible');
-          if (!RM.seeded) {
-            pd.classList.add('hidden');
-          } else {
+          if (RM.seeded) {
+            pd.classList.remove('hidden');
             typeText(pd, '> SWITCH OR HOLD', 40);
             setTimeout(() => { pd.classList.add('hidden'); }, 2500);
           }
@@ -3273,6 +3272,7 @@
             const remaining = liveCycleDuration - live.elapsed;
             const m = Math.floor(remaining / 60);
             const s = Math.floor(remaining % 60);
+            pd.classList.remove('hidden');
             typeText(pd, `> NO SEED — WAITING FOR NEXT RACE`, 30);
             pi.innerHTML = '<span class="phase-badge" style="background:var(--muted);color:#ccc">NO SEED</span>';
             ybp.classList.remove('visible');
