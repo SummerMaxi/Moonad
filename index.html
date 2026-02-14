@@ -1990,8 +1990,10 @@
           } else {
             cardBtnHtml = `<button class="bet-btn" style="border-color:var(--secondary);color:var(--secondary)" onclick="RM.switchMode=true; confirmSwitch(${i})">[ SWITCH TO ${bc.name.toUpperCase()} ]</button>`;
           }
-        } else {
+        } else if (RM.phase === 'betting') {
           cardBtnHtml = `<button class="bet-btn ${isMyBet ? 'placed' : ''}" onclick="openBetModal(${i})">${isMyBet ? '[ BET PLACED ]' : '[ BET ]'}</button>`;
+        } else {
+          cardBtnHtml = '';
         }
 
         card.innerHTML = `
@@ -2066,10 +2068,7 @@
       } else if (isMyBet) {
         btnHtml = `<button class="carousel-bet-btn placed">[ BET PLACED \u2713 ]</button>`;
         btnHtml += `<div style="color:var(--secondary);font-size:10px;margin-top:6px;text-align:center">YOUR BET: ${RM.myBet.amount.toFixed(2)} MON</div>`;
-      } else if (!RM.myBet && RM.walletConnected && RM.phase === 'switching') {
-        // Switching phase but no bet — can still place a new bet
-        btnHtml = `<button class="carousel-bet-btn" onclick="openBetModal(${i})">[ BET ON ${bc.name.toUpperCase()} ]</button>`;
-      } else if (!RM.myBet && RM.walletConnected) {
+      } else if (!RM.myBet && RM.walletConnected && RM.phase === 'betting') {
         btnHtml = `<button class="carousel-bet-btn" onclick="openBetModal(${i})">[ BET ON ${bc.name.toUpperCase()} ]</button>`;
       } else if (RM.myBet && RM.walletConnected) {
         btnHtml = `<button class="carousel-bet-btn" style="color:#555;border-color:#555;cursor:default">[ BET PLACED ON ${bullColors[RM.myBet.bullIndex].name.toUpperCase()} ]</button>`;
@@ -2260,7 +2259,7 @@
 
     // ======== BETTING FUNCTIONS (exposed to onclick) ========
     window.openBetModal = function(bullIndex) {
-      if (RM.phase !== 'betting' && RM.phase !== 'switching') return;
+      if (RM.phase !== 'betting') return; // new bets only during betting phase
       if (RM.myBet) return; // already bet
       if (!RM.walletConnected) { SFX.error(); alert('Connect wallet first'); return; }
       SFX.panelOpen();
@@ -2679,7 +2678,7 @@
 
       if ((RM.switchMode || RM.phase === 'switching') && RM.myBet && RM.myBet.bullIndex !== bullIndex) {
         html += `<button class="popup-bet-btn" style="border-color:var(--secondary);color:var(--secondary)" onclick="hideBullStatPopup(); RM.switchMode=true; confirmSwitch(${bullIndex})">[ SWITCH TO ${bc.name.toUpperCase()} ]</button>`;
-      } else if ((RM.phase === 'betting' || RM.phase === 'switching') && !RM.myBet && RM.walletConnected) {
+      } else if (RM.phase === 'betting' && !RM.myBet && RM.walletConnected) {
         html += `<button class="popup-bet-btn" onclick="hideBullStatPopup(); openBetModal(${bullIndex})">[ BET ON ${bc.name.toUpperCase()} ]</button>`;
       }
 
