@@ -1991,7 +1991,7 @@
           if (isMyBet) {
             cardBtnHtml = `<button class="bet-btn placed">[ CURRENT ]</button>`;
           } else {
-            cardBtnHtml = `<button class="bet-btn" style="border-color:var(--secondary);color:var(--secondary)" onclick="RM.switchMode=true; confirmSwitch(${i})">[ SWITCH TO ${bc.name.toUpperCase()} ]</button>`;
+            cardBtnHtml = `<button class="bet-btn" style="border-color:var(--secondary);color:var(--secondary)" onclick="confirmSwitch(${i})">[ SWITCH TO ${bc.name.toUpperCase()} ]</button>`;
           }
         } else if (RM.phase === 'betting') {
           cardBtnHtml = `<button class="bet-btn ${isMyBet ? 'placed' : ''}" onclick="openBetModal(${i})">${isMyBet ? '[ BET PLACED ]' : '[ BET ]'}</button>`;
@@ -2066,7 +2066,7 @@
         btnHtml += `<div style="color:var(--secondary);font-size:10px;margin-top:6px;text-align:center">YOUR BET: ${RM.myBet.amount.toFixed(2)} MON</div>`;
       } else if (!isMyBet && RM.myBet && RM.phase === 'switching') {
         const remaining = (RM.myBet.amount * 0.95).toFixed(2);
-        btnHtml = `<button class="carousel-bet-btn" style="border-color:var(--secondary);color:var(--secondary)" onclick="RM.switchMode=true; confirmSwitch(${i})">[ SWITCH TO ${bc.name.toUpperCase()} ]</button>`;
+        btnHtml = `<button class="carousel-bet-btn" style="border-color:var(--secondary);color:var(--secondary)" onclick="confirmSwitch(${i})">[ SWITCH TO ${bc.name.toUpperCase()} ]</button>`;
         btnHtml += `<div style="color:var(--muted);font-size:9px;margin-top:4px;text-align:center">5% fee \u2192 ${remaining} MON</div>`;
       } else if (isMyBet) {
         btnHtml = `<button class="carousel-bet-btn placed">[ BET PLACED \u2713 ]</button>`;
@@ -2333,16 +2333,8 @@
       if (RM.phase !== 'switching' || !RM.myBet) return;
       SFX.click();
       RM.switchMode = true;
-      // Open betting panel so user can browse and pick a new bull
       renderBullCards();
       openBettingPanel();
-      // Update your-bet panel to show switch-mode state
-      const panel = document.getElementById('your-bet-body');
-      const bc = bullColors[RM.myBet.bullIndex];
-      panel.innerHTML = `<div style="color:var(--secondary);font-weight:700;margin-bottom:4px">> SWITCH MODE</div>
-        <div>Current: <span style="color:${bc.dot}">${bc.name}</span> (${RM.myBet.amount.toFixed(2)} MON)</div>
-        <div style="color:var(--muted);font-size:9px;margin-top:2px">Pick a new bull. 5% fee applies.</div>
-        <button class="switch-btn" onclick="cancelSwitchMode()" style="margin-top:6px">[ CANCEL ]</button>`;
     };
 
     window.cancelSwitchMode = function() {
@@ -2356,7 +2348,8 @@
     };
 
     window.confirmSwitch = async function(newBullIndex) {
-      if (!RM.myBet || !RM.switchMode) return;
+      if (!RM.myBet) return;
+      if (RM.phase !== 'switching' && !RM.switchMode) return;
       if (newBullIndex === RM.myBet.bullIndex) { SFX.error(); return; }
       if (!contractWrite) { SFX.error(); alert('Wallet not connected'); return; }
       try {
@@ -2680,7 +2673,7 @@
       </div>`;
 
       if ((RM.switchMode || RM.phase === 'switching') && RM.myBet && RM.myBet.bullIndex !== bullIndex) {
-        html += `<button class="popup-bet-btn" style="border-color:var(--secondary);color:var(--secondary)" onclick="hideBullStatPopup(); RM.switchMode=true; confirmSwitch(${bullIndex})">[ SWITCH TO ${bc.name.toUpperCase()} ]</button>`;
+        html += `<button class="popup-bet-btn" style="border-color:var(--secondary);color:var(--secondary)" onclick="hideBullStatPopup(); confirmSwitch(${bullIndex})">[ SWITCH TO ${bc.name.toUpperCase()} ]</button>`;
       } else if (RM.phase === 'betting' && !RM.myBet && RM.walletConnected) {
         html += `<button class="popup-bet-btn" onclick="hideBullStatPopup(); openBetModal(${bullIndex})">[ BET ON ${bc.name.toUpperCase()} ]</button>`;
       }
