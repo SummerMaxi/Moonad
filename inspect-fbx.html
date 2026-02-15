@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html><head><title>FBX Inspector</title></head>
+<body style="background:#000;color:#33ff00;font-family:monospace;padding:20px">
+<h2>> FBX ANIMATION INSPECTOR</h2>
+<pre id="output">Loading Bull.fbx...</pre>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+
+const out = document.getElementById('output');
+function log(msg) { out.textContent += '\n' + msg; console.log(msg); }
+
+const loader = new FBXLoader();
+loader.load('bull-animations-v02/source/Bull.fbx', (fbx) => {
+  log('=== FBX LOADED SUCCESSFULLY ===');
+  log('');
+
+  // Basic info
+  const box = new THREE.Box3().setFromObject(fbx);
+  const size = box.getSize(new THREE.Vector3());
+  log(`Bounding box size: x=${size.x.toFixed(2)} y=${size.y.toFixed(2)} z=${size.z.toFixed(2)}`);
+  log('');
+
+  // Count meshes, bones, etc
+  let meshCount = 0, boneCount = 0, skinnedCount = 0;
+  const meshNames = [];
+  const boneNames = [];
+  fbx.traverse(child => {
+    if (child.isMesh) { meshCount++; meshNames.push(`  [Mesh] ${child.name} (vertices: ${child.geometry.attributes.position?.count || 0})`); }
+    if (child.isSkinnedMesh) { skinnedCount++; }
+    if (child.isBone) { boneCount++; boneNames.push(child.name); }
+  });
+  log(`--- SCENE GRAPH ---`);
+  log(`Meshes: ${meshCount} (Skinned: ${skinnedCount})`);
+  meshNames.forEach(n => log(n));
+  log('');
+  log(`Bones: ${boneCount}`);
+  if (boneCount > 0) {
+    log('Bone names:');
+    boneNames.forEach(n => log(`  ${n}`));
+  }
+  log('');
+
+  // Animations
+  log(`--- ANIMATIONS ---`);
+  log(`Animation clips found: ${fbx.animations ? fbx.animations.length : 0}`);
+  if (fbx.animations && fbx.animations.length > 0) {
+    fbx.animations.forEach((clip, idx) => {
+      log('');
+      log(`[${idx}] "${clip.name}"`);
+      log(`    Duration: ${clip.duration.toFixed(2)}s`);
+      log(`    Tracks: ${clip.tracks.length}`);
+      clip.tracks.forEach((track, ti) => {
+        if (ti < 20) {  // show first 20 tracks
+          log(`      Track ${ti}: ${track.name} (${track.ValueTypeName || track.constructor.name}) keys=${track.times.length}`);
+        }
+      });
+      if (clip.tracks.length > 20) {
+        log(`      ... and ${clip.tracks.length - 20} more tracks`);
+      }
+    });
+  } else {
+    log('No animation clips found in this file.');
+  }
+  log('');
+
+  // Check for morph targets
+  let morphCount = 0;
+  fbx.traverse(child => {
+    if (child.isMesh && child.geometry.morphAttributes && Object.keys(child.geometry.morphAttributes).length > 0) {
+      morphCount++;
+      log(`[Morph targets] ${child.name}: ${Object.keys(child.geometry.morphAttributes).join(', ')}`);
+    }
+  });
+  if (morphCount === 0) log('No morph targets found.');
+
+  log('');
+  log('=== INSPECTION COMPLETE ===');
+
+}, (progress) => {
+  if (progress.total > 0) {
+    out.textContent = `Loading Bull.fbx... ${Math.round(progress.loaded/progress.total*100)}%`;
+  }
+}, (error) => {
+  log('ERROR: ' + error.message);
+});
+</script>
+</body></html>
