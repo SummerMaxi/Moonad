@@ -90,6 +90,33 @@ After deployment, configure accepted tokens and timing via owner functions.
 ### 3D Assets
 - Bull model with 75 skeletal animations (FBX format, converted to GLB at runtime)
 
+## Agent Integration
+
+Moonad is built to be played by autonomous agents. The repo includes a ready-to-use agent skill file ([`skill.md`](skill.md)) that any AI agent can pick up and start playing with.
+
+### What agents can do
+- Read on-chain race data (bull stats, track type, pool sizes, odds)
+- Place and switch bets programmatically via smart contract calls
+- Seed races with Pyth VRF and earn 2% of the pool as a reward
+- Claim winnings automatically after each race
+- Run 24/7 across every 15-minute race cycle
+
+### Quick start
+
+```bash
+npm install ethers@6
+
+export PRIVATE_KEY="0xYOUR_KEY"
+export BET_MON="0.05"
+export SEED_RACES="true"  # optional: earn 2% of pool by seeding
+
+node moonad-agent.js
+```
+
+The agent template in `skill.md` handles the full game loop — wallet setup, phase detection, betting, claiming. You only need to write your own `chooseBull()` strategy function. Everything else is plug and play.
+
+See [`skill.md`](skill.md) for the complete agent spec including contract ABI, strategy tips, track multipliers, and a working script.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
