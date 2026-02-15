@@ -4150,8 +4150,6 @@
 
       if (raceStarted) {
         const lead = sorted[0];
-        const elapsed = clock.getElapsedTime() - raceStartTime;
-        document.getElementById('clock-display').textContent = formatTime(elapsed);
         document.getElementById('speed-info').textContent = `SPD: ${lead.speed.toFixed(1)} M/S | ${lead.name}`;
       }
     }
