@@ -3174,6 +3174,10 @@
       RM.phase = phase;
       RM.phaseStart = clock.getElapsedTime();
       RM.switchMode = false;
+      _lastClockText = '';
+      // Immediately update clock so old timer text doesn't linger
+      const clockEl = document.getElementById('clock-display');
+      if (clockEl) clockEl.textContent = '';
       const pd = document.getElementById('phase-display');
       const bc = document.getElementById('bull-cards');
       const rp = document.getElementById('results-panel');
@@ -3421,7 +3425,7 @@
         if (gameStarted && RM.phase !== 'loading') {
           updatePhaseTimer();
         }
-      }, 1000);
+      }, 100);
     }
 
     let _lastClockText = '';
@@ -4163,10 +4167,7 @@
       const dt = Math.min(clock.getDelta(), 0.05);
       const elapsed = clock.getElapsedTime();
 
-      // Phase timer (only after boot sequence)
-      if (gameStarted && RM.phase !== 'loading') {
-        updatePhaseTimer();
-      }
+      // Phase timer handled by setInterval in startPhaseTimerInterval()
 
       // Animate bull preview in betting panel
       updateBullPreview(dt);
