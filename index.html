@@ -100,6 +100,34 @@
     #leaderboard .medal { color: var(--secondary); }
     #leaderboard .done { color: var(--primary); font-size: 9px; }
 
+    /* All-Time Top 10 */
+    #alltime-lb {
+      position: fixed; bottom: calc(30px + env(safe-area-inset-bottom, 0px)); right: calc(10px + env(safe-area-inset-right, 0px));
+      background: rgba(10, 10, 10, 0.9);
+      border: 1px solid var(--muted);
+      padding: 0; min-width: 220px;
+      color: var(--primary); font-size: 10px; line-height: 1;
+      text-shadow: var(--glow);
+      z-index: 50; pointer-events: auto;
+    }
+    #alltime-lb-header {
+      padding: 4px 8px;
+      background: var(--secondary); color: var(--bg);
+      font-weight: 700; font-size: 9px; letter-spacing: 1px;
+      text-shadow: none;
+    }
+    #alltime-lb-body { padding: 6px 8px; }
+    #alltime-lb .lane {
+      display: flex; align-items: center; gap: 4px;
+      padding: 2px 0; font-size: 10px;
+      border-bottom: 1px solid rgba(31, 82, 31, 0.3);
+    }
+    #alltime-lb .lane:last-child { border-bottom: none; }
+    #alltime-lb .pos { font-weight: 700; width: 20px; color: var(--muted); }
+    #alltime-lb .name-text { flex: 1; }
+    #alltime-lb .medal { color: var(--secondary); }
+    #alltime-lb .done { color: var(--primary); font-size: 9px; }
+
     /* Stats bar */
     #stats-bar {
       position: fixed; bottom: 0; left: 0; width: 100%;
@@ -823,6 +851,11 @@
       <div id="lb-header">+-- LEADERBOARD --+</div>
       <div id="lb-body"></div>
     </div>
+  </div>
+
+  <div id="alltime-lb">
+    <div id="alltime-lb-header">+-- ALL-TIME TOP 10 --+</div>
+    <div id="alltime-lb-body"></div>
   </div>
 
   <div id="claim-banner" onclick="claimWinnings()"></div>
@@ -2534,12 +2567,10 @@
     function renderAllTimeLeaderboard() {
       const lb = RM.allTimeLeaderboard;
       if (!lb || lb.length === 0) {
-        document.getElementById('lb-header').textContent = '+-- ALL-TIME TOP 10 --+';
-        document.getElementById('lb-body').innerHTML = '<div style="padding:4px 0;color:var(--muted)">No data yet</div>';
+        document.getElementById('alltime-lb-body').innerHTML = '<div style="padding:4px 0;color:var(--muted)">No data yet</div>';
         return;
       }
-      document.getElementById('lb-header').textContent = '+-- ALL-TIME TOP 10 --+';
-      document.getElementById('lb-body').innerHTML = lb.map((e, i) => {
+      document.getElementById('alltime-lb-body').innerHTML = lb.map((e, i) => {
         const short = e.player.slice(0, 6) + '..' + e.player.slice(-4);
         const isYou = userAddress && e.player.toLowerCase() === userAddress.toLowerCase();
         const color = isYou ? 'var(--secondary)' : 'var(--primary)';
@@ -2551,10 +2582,8 @@
     function startLeaderboardRefresh() {
       stopLeaderboardRefresh();
       _leaderboardRefreshInterval = setInterval(async () => {
-        if (RM.phase !== 'racing') {
-          await loadOnChainLeaderboard();
-          if (RM.phase !== 'racing') renderAllTimeLeaderboard();
-        }
+        await loadOnChainLeaderboard();
+        renderAllTimeLeaderboard();
       }, 60000);
     }
 
@@ -3330,23 +3359,22 @@
           break;
       }
 
-      // Toggle leaderboard: race positions during racing, all-time otherwise
+      // Race leaderboard (top-right): show race positions during racing/results
       if (phase === 'racing') {
-        document.getElementById('lb-header').textContent = '+-- LEADERBOARD --+';
-        stopLeaderboardRefresh();
+        document.getElementById('lb-header').textContent = '+-- RACE POSITIONS --+';
+        document.getElementById('leaderboard').style.display = '';
       } else if (phase === 'results') {
-        // Show final race positions for 10s, then switch to all-time
         if (bulls.length > 0) updateLeaderboard();
-        setTimeout(() => {
-          if (RM.phase === 'results' || RM.phase === 'waiting' || RM.phase === 'betting') {
-            renderAllTimeLeaderboard();
-            startLeaderboardRefresh();
-          }
-        }, 10000);
+        document.getElementById('lb-header').textContent = '+-- FINAL POSITIONS --+';
+        document.getElementById('leaderboard').style.display = '';
       } else {
-        renderAllTimeLeaderboard();
-        startLeaderboardRefresh();
+        // Hide race leaderboard when not racing
+        document.getElementById('lb-body').innerHTML = '';
+        document.getElementById('leaderboard').style.display = 'none';
       }
+      // All-time leaderboard (bottom-right): always refresh
+      renderAllTimeLeaderboard();
+      startLeaderboardRefresh();
     }
 
     function getPhaseTimeRemaining() {
@@ -3396,20 +3424,23 @@
       }, 1000);
     }
 
+    let _lastClockText = '';
     function updatePhaseTimer() {
       const remaining = getPhaseTimeRemaining();
+      const clockEl = document.getElementById('clock-display');
+      let newText = '';
+
       if (RM.phase === 'waiting' || RM.phase === 'betting' || RM.phase === 'switching' || RM.phase === 'results') {
         const m = Math.floor(remaining / 60);
         const s = Math.floor(remaining % 60);
         const timeStr = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-        const clockEl = document.getElementById('clock-display');
         const phaseLabels = {
           waiting: '> loading in',
           betting: '> betting closes in',
           switching: '> switching closes in',
           results: '> next race in',
         };
-        clockEl.textContent = `${phaseLabels[RM.phase] || '>'} ${timeStr}`;
+        newText = `${phaseLabels[RM.phase] || '>'} ${timeStr}`;
         // Tick sound once per second (only after boot sequence)
         const currentSec = Math.floor(remaining);
         if (gameStarted && remaining > 0 && currentSec !== _lastTickSec) {
@@ -3423,18 +3454,22 @@
         }
       } else if (RM.phase === 'racing') {
         if (!RM.seeded) {
-          // Unseeded: show countdown to next race
           const m = Math.floor(remaining / 60);
           const s = Math.floor(remaining % 60);
           const timeStr = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-          document.getElementById('clock-display').textContent = `> next race in ${timeStr}`;
+          newText = `> next race in ${timeStr}`;
         } else {
-          // Normal race: show elapsed race time
           const elapsed = clock.getElapsedTime() - raceStartTime;
           if (raceStarted) {
-            document.getElementById('clock-display').textContent = `> race ${formatTime(elapsed)}`;
+            newText = `> race ${formatTime(elapsed)}`;
           }
         }
+      }
+
+      // Only update DOM when text actually changes (avoid 60fps repaints)
+      if (newText && newText !== _lastClockText) {
+        clockEl.textContent = newText;
+        _lastClockText = newText;
       }
 
       // Auto-advance phases (guard prevents double-fire from rAF + setInterval)
